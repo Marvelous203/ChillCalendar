@@ -92,6 +92,71 @@
       "updatedAt": "2026-11-26T06:32:35.737Z"
     }
   ],
-  "places": [],
+  "places": [
+    {
+      "id": "f832863b-a3e4-44d0-ac38-baafca072dfe",
+      "eventId": "085a556e-cfba-4b58-9109-1626db644199",
+      "participantId": "ffef22b8-28b2-4db3-8534-0f99524c30c7",
+      "type": "itinerary",
+      "name": "Lộ trình 2 chặng",
+      "addr": "suối → tiệm bia xe lửa",
+      "link": "https://www.google.com/maps/dir/su%E1%BB%91i/ti%E1%BB%87m%20bia%20xe%20l%E1%BB%ADa",
+      "imageUrl": "",
+      "note": "",
+      "stops": [
+        {
+          "id": "stop-1",
+          "category": "checkin",
+          "time": "16:30",
+          "name": "suối",
+          "addr": "",
+          "link": "https://maps.app.goo.gl/uj3LA3QkAwnvf153A",
+          "imageUrl": ""
+        },
+        {
+          "id": "stop-2",
+          "category": "food",
+          "time": "18:30",
+          "name": "tiệm bia xe lửa",
+          "addr": "",
+          "link": "https://www.google.com/maps/search/?api=1&query=ti%E1%BB%87m%20bia%20xe%20l%E1%BB%ADa",
+          "imageUrl": ""
+        }
+      ],
+      "createdAt": "2026-11-26T06:38:06.174Z"
+    },
+    {
+      "id": "c3d99ac8-0d21-4a11-af87-21415a183540",
+      "eventId": "085a556e-cfba-4b58-9109-1626db644199",
+      "participantId": "ffef22b8-28b2-4db3-8534-0f99524c30c7",
+      "type": "itinerary",
+      "name": "Lộ trình 2 chặng",
+      "addr": "test → tiem bia xe lua",
+      "link": "https://www.google.com/maps/dir/test/tiem%20bia%20xe%20lua",
+      "imageUrl": "https://maps.google.com/maps/api/staticmap?center=10.662367%2C106.48064505&zoom=10&size=900x900&language=en&sensor=false&key=AIzaSyBoYjeRtfVI0Jd8Q_9mnflo9i4sOYpShB0&signature=PaCTQLpaek0NQgFoEPj5Jpa8wSI",
+      "note": "",
+      "stops": [
+        {
+          "id": "stop-1",
+          "category": "checkin",
+          "time": "16:30",
+          "name": "test",
+          "addr": "",
+          "link": "https://maps.app.goo.gl/cP5j4K5uRhZHohVv8",
+          "imageUrl": ""
+        },
+        {
+          "id": "stop-2",
+          "category": "food",
+          "time": "18:30",
+          "name": "tiem bia xe lua",
+          "addr": "",
+          "link": "https://www.google.com/maps/search/?api=1&query=tiem%20bia%20xe%20lua",
+          "imageUrl": ""
+        }
+      ],
+      "createdAt": "2026-11-26T06:40:27.501Z"
+    }
+  ],
   "votes": []
 }

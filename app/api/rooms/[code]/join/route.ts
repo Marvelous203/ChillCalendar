@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateSecretToken, hashParticipantToken } from '@/lib/auth';
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit';
-import { resolveRoomContext } from '@/lib/room-service';
+import { buildRoomBundle, resolveRoomContext } from '@/lib/room-service';
 import { getStore } from '@/lib/store';
 import { joinRoomSchema } from '@/lib/validation';
 
@@ -69,11 +69,17 @@ export async function POST(
     ctx.userId
   );
 
+  const bundle =
+    created.status === 'approved'
+      ? await buildRoomBundle({ ...ctx, participant: created })
+      : null;
+
   return NextResponse.json(
     {
       participantToken: rawToken,
       participantId: created.id,
       status: created.status,
+      bundle,
     },
     { status: 201 }
   );

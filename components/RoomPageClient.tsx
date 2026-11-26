@@ -14,6 +14,8 @@ import { PrivateRoomGate } from '@/components/PrivateRoomGate';
 import { ResultsPanel } from '@/components/ResultsPanel';
 import { RoomCodeChip } from '@/components/RoomCodeChip';
 import { SaveBar } from '@/components/SaveBar';
+import { ShareRoomButton } from '@/components/ShareRoomButton';
+import { RoomSkeleton } from '@/components/Skeletons';
 import { Tabs } from '@/components/Tabs';
 import { useToast } from '@/components/Toast';
 import {
@@ -93,7 +95,7 @@ export function RoomPageClient() {
       }
       return json;
     },
-    { refreshInterval: 5000 }
+    { refreshInterval: 8000, keepPreviousData: true }
   );
 
   const [tab, setTab] = useState<RoomTab>('grid');
@@ -131,6 +133,7 @@ export function RoomPageClient() {
       const json = (await res.json()) as {
         participantToken?: string;
         status?: string;
+        bundle?: RoomBundle | null;
         error?: string;
       };
       if (!res.ok) {
@@ -141,7 +144,11 @@ export function RoomPageClient() {
         setParticipantToken(code, json.participantToken);
         setTokenOverride(json.participantToken);
       }
-      await mutate();
+      if (json.bundle) {
+        await mutate(json.bundle, { revalidate: false });
+      } else {
+        await mutate();
+      }
       toast(
         json.status === 'pending'
           ? 'Đã gửi yêu cầu, chờ chủ phòng duyệt nhé!'
@@ -196,6 +203,29 @@ export function RoomPageClient() {
       payload.type === 'itinerary' ? 'Đã thêm lộ trình!' : 'Đã thêm địa điểm!',
       'success'
     );
+  }
+
+  async function handleEditPlace(
+    placeId: string,
+    payload: {
+      type: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      imageUrl: string;
+      note: string;
+      stops: ItineraryStop[];
+    }
+  ) {
+    const res = await fetch(`/api/rooms/${code}/places`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ placeId, ...payload }),
+    });
+    const json = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(json.error ?? 'Không cập nhật được địa điểm');
+    await mutate();
+    toast('Đã cập nhật địa điểm!', 'success');
   }
 
   async function handleDeletePlace(placeId: string) {
@@ -305,11 +335,7 @@ export function RoomPageClient() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div className="glass-card p-8 text-center text-sm text-[var(--muted)]">
-        Đang tải dữ liệu phòng...
-      </div>
-    );
+    return <RoomSkeleton />;
   }
 
   const finalPlace =
@@ -336,6 +362,12 @@ export function RoomPageClient() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <ShareRoomButton
+            code={data.event.code}
+            title={data.event.title}
+            inviteToken={data.event.inviteToken}
+            isPrivate={data.event.visibility === 'private'}
+          />
           {data.me && (
             <>
               <span className="rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold">
@@ -436,6 +468,7 @@ export function RoomPageClient() {
           myParticipantId={data.me?.id ?? null}
           canParticipate={data.permissions.canParticipate}
           onAddPlace={handleAddPlace}
+          onEditPlace={handleEditPlace}
           onDeletePlace={handleDeletePlace}
           onToggleVote={handleToggleVote}
         />

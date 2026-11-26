@@ -29,11 +29,11 @@ async function runTests() {
   };
 
   // 1. Pages render 200
-  for (const p of ['/', '/login', '/new']) {
+  for (const p of ['/', '/login', '/new', '/profile']) {
     const res = await fetch(`${BASE}${p}`);
     assert.equal(res.status, 200, `GET ${p} expected 200`);
   }
-  pass('Pages SSR/Static 200', '/, /login, /new');
+  pass('Pages SSR/Static 200', '/, /login, /new, /profile');
 
   // 2. Unauthenticated POST /api/events -> 401
   {
@@ -226,8 +226,24 @@ async function runTests() {
         name: 'Kèo chiều tối',
         note: 'Đi từ Q1 sang Q3',
         stops: [
-          { id: 's1', category: 'checkin', time: '16:30', name: 'Nhà thờ Đức Bà', addr: 'Quận 1', link: '' },
-          { id: 's2', category: 'cafe', time: '18:00', name: 'Phúc Long Lê Văn Sỹ', addr: 'Quận 3', link: '' },
+          {
+            id: 's1',
+            category: 'checkin',
+            time: '16:30',
+            name: 'Nhà thờ Đức Bà',
+            addr: 'Quận 1',
+            link: 'https://www.google.com/maps/place/Test/@10.7797855,106.6968302,17z',
+          },
+          {
+            id: 's2',
+            category: 'cafe',
+            time: '18:00',
+            name: 'Phúc Long Lê Văn Sỹ',
+            addr: 'Quận 3',
+            link: '',
+            lat: 10.7891,
+            lng: 106.6789,
+          },
         ],
       }),
     });
@@ -236,7 +252,26 @@ async function runTests() {
     assert.equal(itinJson.place.type, 'itinerary');
     assert.equal(itinJson.place.stops.length, 2);
     assert.ok(itinJson.place.link.includes('google.com/maps/dir/'));
-    pass('Places, Votes & Itinerary multi-stop Maps URL -> 201/200');
+    assert.ok(itinJson.place.link.includes('10.7797855%2C106.6968302') || itinJson.place.link.includes('10.7797855,106.6968302'));
+
+    const editItin = await fetch(`${BASE}/api/rooms/${roomCode}/places`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-participant-token': participantToken,
+      },
+      body: JSON.stringify({
+        placeId: itinJson.place.id,
+        type: 'itinerary',
+        name: 'Kèo chiều tối (đã sửa)',
+        note: 'Đã cập nhật',
+        stops: itinJson.place.stops,
+      }),
+    });
+    assert.equal(editItin.status, 200);
+    const editJson = await editItin.json();
+    assert.equal(editJson.place.name, 'Kèo chiều tối (đã sửa)');
+    pass('Places, Edit, Votes & Coordinate-based Itinerary URL -> 201/200');
   }
 
   // 11. Permission-denied: non-owner finalize on owner_only room -> 403; owner finalize -> 200
@@ -404,6 +439,25 @@ async function runTests() {
     const listJson = await listRes.json();
     assert.ok(listJson.joinedEvents.some((e) => e.code === sharedCode));
     pass('Logged-in friend persistence & joinedEvents list');
+  }
+
+  // 16. Profile GET & PATCH
+  {
+    const patchRes = await fetch(`${BASE}/api/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+      body: JSON.stringify({ displayName: 'Phát Đẹp Trai' }),
+    });
+    assert.equal(patchRes.status, 200);
+
+    const getRes = await fetch(`${BASE}/api/profile`, {
+      headers: { Cookie: ownerCookie },
+    });
+    assert.equal(getRes.status, 200);
+    const prof = await getRes.json();
+    assert.equal(prof.profile.displayName, 'Phát Đẹp Trai');
+    assert.ok(prof.stats.ownedCount >= 1);
+    pass('User profile GET & PATCH -> 200');
   }
 
   console.log(`\nALL ${results.length} E2E CHECKS PASSED`);

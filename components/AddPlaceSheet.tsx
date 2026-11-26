@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { motion, Reorder, useDragControls } from 'motion/react';
 import { compressImageToWebp } from '@/lib/image-compress';
-import { searchMapsUrl, validateGoogleMapsUrl } from '@/lib/maps';
+import { extractCoordsFromMapsUrl, searchMapsUrl, validateGoogleMapsUrl } from '@/lib/maps';
 import { sheetModal } from '@/lib/motion';
-import type { ItineraryStop, PlaceCategory, PlaceType } from '@/lib/types';
+import type { ItineraryStop, PlaceCategory, PlaceType, PublicPlace } from '@/lib/types';
 import { PlaceAutocompleteInput } from './PlaceAutocompleteInput';
 
 const CATEGORY_META: Array<{
@@ -114,7 +114,13 @@ function StopRow({
             value={stop.name}
             onChange={(name) => onUpdate({ name })}
             onSelectSuggestion={(s) =>
-              onUpdate({ name: s.name, addr: s.addr, link: s.link })
+              onUpdate({
+                name: s.name,
+                addr: s.addr,
+                link: s.link,
+                lat: s.lat,
+                lng: s.lng,
+              })
             }
             placeholder={`Tên địa điểm ${meta.label.toLowerCase()}...`}
           />
@@ -122,7 +128,7 @@ function StopRow({
             <a
               href={
                 stop.name.trim()
-                  ? searchMapsUrl(`${stop.name} ${stop.addr}`.trim())
+                  ? searchMapsUrl(`${stop.name} ${stop.addr}`.trim(), stop.lat, stop.lng)
                   : 'https://www.google.com/maps'
               }
               target="_blank"
@@ -135,7 +141,14 @@ function StopRow({
               type="url"
               maxLength={300}
               value={stop.link}
-              onChange={(e) => onUpdate({ link: e.target.value })}
+              onChange={(e) => {
+                const nextLink = e.target.value;
+                const coords = extractCoordsFromMapsUrl(nextLink);
+                onUpdate({
+                  link: nextLink,
+                  ...(coords ? { lat: coords.lat, lng: coords.lng } : { lat: undefined, lng: undefined }),
+                });
+              }}
               placeholder="Dán link GG Maps..."
               className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs outline-none focus:border-[var(--primary)]"
             />
@@ -180,11 +193,13 @@ function StopRow({
 }
 
 export function AddPlaceSheet({
+  initialPlace,
   onClose,
-  onAdd,
+  onSave,
 }: {
+  initialPlace?: PublicPlace | null;
   onClose: () => void;
-  onAdd: (payload: {
+  onSave: (payload: {
     type: PlaceType;
     name: string;
     addr: string;
@@ -194,18 +209,23 @@ export function AddPlaceSheet({
     stops: ItineraryStop[];
   }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<PlaceType>('single');
-  const [name, setName] = useState('');
-  const [addr, setAddr] = useState('');
-  const [link, setLink] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [note, setNote] = useState('');
+  const isEditing = Boolean(initialPlace);
+  const [mode, setMode] = useState<PlaceType>(initialPlace?.type ?? 'single');
+  const [name, setName] = useState(initialPlace?.name ?? '');
+  const [addr, setAddr] = useState(initialPlace?.addr ?? '');
+  const [link, setLink] = useState(initialPlace?.link ?? '');
+  const [imageUrl, setImageUrl] = useState(initialPlace?.imageUrl ?? '');
+  const [note, setNote] = useState(initialPlace?.note ?? '');
   const [uploading, setUploading] = useState(false);
 
-  const [stops, setStops] = useState<ItineraryStop[]>([
-    { id: 'stop-1', category: 'checkin', time: '16:30', name: '', addr: '', link: '' },
-    { id: 'stop-2', category: 'food', time: '18:30', name: '', addr: '', link: '' },
-  ]);
+  const [stops, setStops] = useState<ItineraryStop[]>(
+    initialPlace?.stops && initialPlace.stops.length > 0
+      ? initialPlace.stops
+      : [
+          { id: 'stop-1', category: 'checkin', time: '16:30', name: '', addr: '', link: '' },
+          { id: 'stop-2', category: 'food', time: '18:30', name: '', addr: '', link: '' },
+        ]
+  );
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -243,7 +263,7 @@ export function AddPlaceSheet({
       }
       setSubmitting(true);
       try {
-        await onAdd({
+        await onSave({
           type: 'single',
           name: name.trim(),
           addr: addr.trim(),
@@ -254,7 +274,7 @@ export function AddPlaceSheet({
         });
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Không thêm được địa điểm');
+        setError(err instanceof Error ? err.message : 'Không lưu được địa điểm');
       } finally {
         setSubmitting(false);
       }
@@ -269,7 +289,7 @@ export function AddPlaceSheet({
 
     setSubmitting(true);
     try {
-      await onAdd({
+      await onSave({
         type: 'itinerary',
         name: name.trim() || `Lộ trình ${validStops.length} chặng`,
         addr: '',
@@ -280,12 +300,12 @@ export function AddPlaceSheet({
           ...s,
           name: s.name.trim(),
           addr: s.addr.trim(),
-          link: s.link.trim() || searchMapsUrl(`${s.name} ${s.addr}`.trim()),
+          link: s.link.trim() || searchMapsUrl(`${s.name} ${s.addr}`.trim(), s.lat, s.lng),
         })),
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thêm được lộ trình');
+      setError(err instanceof Error ? err.message : 'Không lưu được lộ trình');
     } finally {
       setSubmitting(false);
     }
@@ -301,7 +321,9 @@ export function AddPlaceSheet({
         className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-2xl sm:p-6"
       >
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-lg font-bold">Đề xuất địa điểm / lộ trình</h3>
+          <h3 className="font-display text-lg font-bold">
+            {isEditing ? 'Chỉnh sửa địa điểm / lộ trình' : 'Đề xuất địa điểm / lộ trình'}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -578,9 +600,11 @@ export function AddPlaceSheet({
           >
             {submitting
               ? 'Đang lưu...'
-              : mode === 'itinerary'
-                ? 'Đề xuất lộ trình này'
-                : 'Thêm địa điểm'}
+              : isEditing
+                ? 'Lưu thay đổi'
+                : mode === 'itinerary'
+                  ? 'Đề xuất lộ trình này'
+                  : 'Thêm địa điểm'}
           </button>
         </form>
       </motion.div>

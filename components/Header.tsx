@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useSyncExternalStore } from 'react';
 import useSWR from 'swr';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import { UserAvatar } from './UserAvatar';
 
 interface MeResponse {
   user: { id: string; email: string } | null;
@@ -81,6 +82,14 @@ export function Header() {
                 className="rounded-full bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--primary-fg)] transition hover:opacity-90 sm:text-sm"
               >
                 + Room
+              </Link>
+              <Link
+                href="/profile"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] py-1 pl-1 pr-2.5 text-xs font-semibold hover:border-[var(--primary)]"
+                title="Hồ sơ người dùng"
+              >
+                <UserAvatar name={data.user.email.split('@')[0] || 'U'} size="sm" />
+                <span className="hidden sm:inline">Hồ sơ</span>
               </Link>
               <button
                 type="button"

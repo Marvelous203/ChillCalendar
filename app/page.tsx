@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import { motion } from 'motion/react';
 import { JoinBox } from '@/components/JoinBox';
 import { RoomCodeChip } from '@/components/RoomCodeChip';
+import { EventListSkeleton } from '@/components/Skeletons';
 import { formatDateVi } from '@/lib/dates';
 import { fadeSlideUp } from '@/lib/motion';
 import { formatHour } from '@/lib/timezone';
@@ -36,7 +37,7 @@ export default function HomePage() {
     '/api/auth/me',
     (u: string) => fetch(u).then((r) => r.json())
   );
-  const { data: eventsData } = useSWR(
+  const { data: eventsData, isLoading: eventsLoading } = useSWR(
     meData?.user ? '/api/events' : null,
     fetcher
   );
@@ -92,7 +93,9 @@ export default function HomePage() {
             <span className="text-xs text-[var(--muted)]">{meData.user.email}</span>
           </div>
 
-          {!eventsData?.events?.length ? (
+          {eventsLoading ? (
+            <EventListSkeleton count={2} />
+          ) : !eventsData?.events?.length ? (
             <div className="glass-card p-6 text-center text-sm text-[var(--muted)]">
               Bạn chưa tạo sự kiện nào.{' '}
               <Link href="/new" className="font-semibold text-[var(--primary)] underline">

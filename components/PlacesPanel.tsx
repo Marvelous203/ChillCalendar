@@ -20,6 +20,7 @@ export function PlacesPanel({
   myParticipantId,
   canParticipate,
   onAddPlace,
+  onEditPlace,
   onDeletePlace,
   onToggleVote,
 }: {
@@ -36,10 +37,23 @@ export function PlacesPanel({
     note: string;
     stops: ItineraryStop[];
   }) => Promise<void>;
+  onEditPlace: (
+    placeId: string,
+    payload: {
+      type: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      imageUrl: string;
+      note: string;
+      stops: ItineraryStop[];
+    }
+  ) => Promise<void>;
   onDeletePlace: (placeId: string) => Promise<void>;
   onToggleVote: (placeId: string, nextOn: boolean) => Promise<void>;
 }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editingPlace, setEditingPlace] = useState<PublicPlace | null>(null);
 
   const sorted = [...places].sort((a, b) => b.voteCount - a.voteCount);
 
@@ -91,13 +105,22 @@ export function PlacesPanel({
                       <h4 className="font-display text-base font-bold">{place.name}</h4>
                     </div>
                     {canDel && (
-                      <button
-                        type="button"
-                        onClick={() => onDeletePlace(place.id)}
-                        className="text-xs text-[var(--muted)] hover:text-red-400"
-                      >
-                        Xóa
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingPlace(place)}
+                          className="text-xs text-[var(--muted)] hover:text-[var(--primary)]"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeletePlace(place.id)}
+                          className="text-xs text-[var(--muted)] hover:text-red-400"
+                        >
+                          Xóa
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -184,7 +207,7 @@ export function PlacesPanel({
                       ))}
 
                       <a
-                        href={place.link || itineraryMapsUrl(place.stops)}
+                        href={itineraryMapsUrl(place.stops)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--primary)]/40 bg-[var(--primary)]/10 px-3.5 py-2 text-xs font-bold text-[var(--primary)] hover:bg-[var(--primary)]/20"
@@ -220,8 +243,21 @@ export function PlacesPanel({
       )}
 
       <AnimatePresence>
-        {showAdd && (
-          <AddPlaceSheet onClose={() => setShowAdd(false)} onAdd={onAddPlace} />
+        {(showAdd || editingPlace) && (
+          <AddPlaceSheet
+            initialPlace={editingPlace}
+            onClose={() => {
+              setShowAdd(false);
+              setEditingPlace(null);
+            }}
+            onSave={async (payload) => {
+              if (editingPlace) {
+                await onEditPlace(editingPlace.id, payload);
+              } else {
+                await onAddPlace(payload);
+              }
+            }}
+          />
         )}
       </AnimatePresence>
     </div>

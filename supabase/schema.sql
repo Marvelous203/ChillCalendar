@@ -5,7 +5,7 @@ create table events (
   owner_id         uuid not null references auth.users(id) on delete cascade,
   title            text not null check (char_length(title) between 1 and 80),
   note             text not null default '' check (char_length(note) <= 300),
-  dates            date[] not null,
+  dates            text[] not null,
   hour_from        smallint not null check (hour_from between 0 and 23),
   hour_to          smallint not null check (hour_to between 1 and 24),
   visibility       text not null default 'link'
@@ -13,7 +13,7 @@ create table events (
   finalize_policy  text not null default 'any_member'
                    check (finalize_policy in ('owner_only', 'any_member')),
   invite_token     text not null,
-  final_date       date,
+  final_date       text,
   final_from       smallint,
   final_to         smallint,
   final_place      uuid,
@@ -75,3 +75,7 @@ create index on events (owner_id);
 create index on participants (event_id);
 create index on responses (event_id);
 create index on places (event_id);
+
+grant usage on schema public to service_role;
+grant all privileges on all tables in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;

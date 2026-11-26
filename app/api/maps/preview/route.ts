@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { validateGoogleMapsUrl } from '@/lib/maps';
+import { extractCoordsFromMapsUrl, validateGoogleMapsUrl } from '@/lib/maps';
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit';
 
 function extractMeta(html: string, property: string): string {
@@ -59,16 +59,36 @@ export async function POST(req: Request) {
     clearTimeout(timer);
 
     if (!res.ok) {
-      return NextResponse.json({ imageUrl: '', title: '' });
+      const fallbackCoords = extractCoordsFromMapsUrl(res.url || safeUrl);
+      return NextResponse.json({
+        imageUrl: '',
+        title: '',
+        lat: fallbackCoords?.lat,
+        lng: fallbackCoords?.lng,
+      });
     }
 
     const html = await res.text();
     const rawImg = extractMeta(html, 'og:image');
     const title = extractMeta(html, 'og:title');
     const imageUrl = rawImg.startsWith('https://') ? rawImg.slice(0, 500) : '';
+    const coords =
+      extractCoordsFromMapsUrl(res.url || safeUrl) ??
+      extractCoordsFromMapsUrl(html);
 
-    return NextResponse.json({ imageUrl, title });
+    return NextResponse.json({
+      imageUrl,
+      title,
+      lat: coords?.lat,
+      lng: coords?.lng,
+    });
   } catch {
-    return NextResponse.json({ imageUrl: '', title: '' });
+    const coords = extractCoordsFromMapsUrl(safeUrl);
+    return NextResponse.json({
+      imageUrl: '',
+      title: '',
+      lat: coords?.lat,
+      lng: coords?.lng,
+    });
   }
 }

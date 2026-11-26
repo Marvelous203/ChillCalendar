@@ -473,6 +473,53 @@ export const supabaseStore: StoreAdapter = {
     };
   },
 
+  async updatePlace(eventId, placeId, patch) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('places')
+      .update({
+        type: patch.type,
+        name: patch.name,
+        addr: patch.addr,
+        link: patch.link,
+        image_url: patch.imageUrl ?? '',
+        note: patch.note ?? '',
+        stops: patch.stops ?? [],
+      })
+      .eq('event_id', eventId)
+      .eq('id', placeId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const p = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      type?: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      image_url?: string;
+      note?: string;
+      stops?: ItineraryStop[];
+      created_at: string;
+    };
+    return {
+      id: p.id,
+      eventId: p.event_id,
+      participantId: p.participant_id,
+      type: p.type ?? 'single',
+      name: p.name,
+      addr: p.addr,
+      link: p.link,
+      imageUrl: p.image_url ?? '',
+      note: p.note ?? '',
+      stops: p.stops ?? [],
+      createdAt: p.created_at,
+    };
+  },
+
   async deletePlace(eventId, placeId) {
     const sb = getServiceClient();
     const { error } = await sb
@@ -485,17 +532,10 @@ export const supabaseStore: StoreAdapter = {
 
   async listVotesByEvent(eventId) {
     const sb = getServiceClient();
-    const { data: placeRows, error: placeErr } = await sb
-      .from('places')
-      .select('id')
-      .eq('event_id', eventId);
-    if (placeErr) throw placeErr;
-    const placeIds = (placeRows as Array<{ id: string }>).map((r) => r.id);
-    if (placeIds.length === 0) return [];
     const { data, error } = await sb
       .from('votes')
-      .select('*')
-      .in('place_id', placeIds);
+      .select('place_id, participant_id, places!inner(event_id)')
+      .eq('places.event_id', eventId);
     if (error) throw error;
     return (data as Array<{ place_id: string; participant_id: string }>).map((v) => ({
       placeId: v.place_id,

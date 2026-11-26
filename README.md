@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hẹn Giờ Rảnh (`chillwithme`)
 
-## Getting Started
+Ứng dụng web giúp bạn bè hẹn lịch đi chơi, chọn giờ rảnh, đề xuất địa điểm / lộ trình nhiều chặng và chốt kèo nhanh chóng — tối ưu cho điện thoại (Zalo/Messenger WebView), múi giờ chuẩn Việt Nam `Asia/Ho_Chi_Minh` (`UTC+7`).
 
-First, run the development server:
+## Tính năng chính
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Tạo phòng nhanh:** Đăng ký/đăng nhập bằng Gmail + Mật khẩu + Cloudflare Turnstile (không cần xác nhận email).
+- **2 chế độ ngày linh hoạt:** Chọn tối đa 14 ngày cụ thể trên lịch hoặc chọn **"Không cần chọn ngày"** (khung Thứ 2 – Chủ nhật).
+- **Người tham gia không cần tài khoản:** Nhập mã `#K7M2QX` hoặc mở link, nhập tên và chọn giờ (hỗ trợ kéo vuốt trên mobile + chọn nhanh **Sáng / Chiều / Tối**). Nếu đã đăng nhập tài khoản, tiến độ được đồng bộ xuyên suốt giữa các thiết bị.
+- **Kết quả & Lưới nhiệt (Heatmap):** Gợi ý Top 3 khung giờ nhiều người rảnh nhất, chạm vào từng ô để xem **Ai rảnh / Ai bận**.
+- **Đề xuất & Bình chọn địa điểm / Lộ trình:**
+  - Gợi ý địa chỉ tự động khi gõ (OpenStreetMap Photon API).
+  - Mở Google Maps để lấy link chia sẻ, tự lấy ảnh minh họa từ link hoặc tải ảnh nén WebP.
+  - Chế độ **Lộ trình kéo-thả** nhiều chặng (`📸 Check-in`, `🍜 Ăn uống`, `☕ Cà phê`, `🎤 Giải trí`) kèm nút mở toàn bộ tuyến đường trên Google Maps theo tọa độ chính xác.
+- **Chốt lịch & Chia sẻ:** Hiệu ứng pháo giấy khi chốt, nút **Thêm vào Google Calendar**, chia sẻ nhanh qua **Zalo / Messenger**, và **Hồ sơ người dùng (`/profile`)**.
+- **Giao diện Dark Mode mặc định** (có nút chuyển Sáng/Tối).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Công nghệ sử dụng
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework:** Next.js 16 (App Router) + TypeScript + Tailwind CSS v4
+- **UI & Animation:** `motion/react`, `canvas-confetti`, `swr`, `zod`
+- **Backend & Bảo mật:** Supabase (Auth + PostgreSQL RLS + Storage `place-photos`), Cloudflare Turnstile, Upstash Redis Ratelimit
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Chạy thử local (`AUTH_MODE=dev`)
 
-## Learn More
+1. Cài đặt dependencies:
+   ```bash
+   npm install
+   ```
+2. Tạo file `.env.local` (mặc định đã bật `AUTH_MODE=dev` dùng `data/db.json`, không cần Supabase/Turnstile):
+   ```env
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   AUTH_MODE=dev
+   ```
+3. Khởi chạy server dev:
+   ```bash
+   npm run dev
+   ```
+4. Chạy kiểm tra chất lượng & E2E:
+   ```bash
+   npm run lint
+   npm run build
+   node scripts/verify-e2e.mjs
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+## Triển khai Production (Vercel + Supabase)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Chạy toàn bộ [supabase/schema.sql](supabase/schema.sql) trong **Supabase SQL Editor**.
+2. Trong **Supabase → Authentication → Providers → Email**: bật Email và **tắt Confirm email**.
+3. Trong **Supabase → Authentication → Bot and Abuse Protection**: bật **Turnstile** và dán Secret Key.
+4. Trong **Supabase → Storage**: tạo bucket **`place-photos`** ở chế độ **Public**.
+5. Khai báo biến môi trường trên Vercel theo [.env.example](.env.example) (không đặt `AUTH_MODE=dev`).

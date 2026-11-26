@@ -85,6 +85,19 @@ export interface StoreAdapter {
     note?: string;
     stops?: ItineraryStop[];
   }): Promise<PlaceRecord>;
+  updatePlace(
+    eventId: string,
+    placeId: string,
+    patch: {
+      type: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      imageUrl?: string;
+      note?: string;
+      stops?: ItineraryStop[];
+    }
+  ): Promise<PlaceRecord | null>;
   deletePlace(eventId: string, placeId: string): Promise<void>;
 
   listVotesByEvent(eventId: string): Promise<VoteRecord[]>;

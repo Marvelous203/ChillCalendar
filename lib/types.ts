@@ -57,6 +57,8 @@ export interface ItineraryStop {
   name: string;
   addr: string;
   link: string;
+  lat?: number;
+  lng?: number;
   imageUrl?: string;
 }
 

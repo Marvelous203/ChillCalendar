@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { searchMapsUrl } from '@/lib/maps';
 
 interface PhotonFeature {
+  geometry?: {
+    coordinates?: [number, number]; // [lon, lat]
+  };
   properties?: {
     name?: string;
     housenumber?: string;
@@ -20,6 +23,8 @@ export interface AutocompleteSuggestion {
   name: string;
   addr: string;
   link: string;
+  lat?: number;
+  lng?: number;
 }
 
 function formatPhotonFeature(f: PhotonFeature): AutocompleteSuggestion | null {
@@ -34,8 +39,11 @@ function formatPhotonFeature(f: PhotonFeature): AutocompleteSuggestion | null {
     p.city || p.state || '',
   ].filter(Boolean);
   const addr = Array.from(new Set(addrParts)).join(', ').slice(0, 160);
-  const link = searchMapsUrl(`${name} ${addr}`.trim());
-  return { name: name.slice(0, 80), addr, link };
+  const coords = f.geometry?.coordinates;
+  const lng = typeof coords?.[0] === 'number' ? coords[0] : undefined;
+  const lat = typeof coords?.[1] === 'number' ? coords[1] : undefined;
+  const link = searchMapsUrl(`${name} ${addr}`.trim(), lat, lng);
+  return { name: name.slice(0, 80), addr, link, lat, lng };
 }
 
 export function PlaceAutocompleteInput({

@@ -38,20 +38,67 @@ export function validateGoogleMapsUrl(raw: string): string | null {
   return parsed.toString();
 }
 
-export function searchMapsUrl(query: string): string {
+export function extractCoordsFromMapsUrl(
+  rawUrl: string
+): { lat: number; lng: number } | null {
+  if (!rawUrl) return null;
+  const pinMatch = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(rawUrl);
+  if (pinMatch) {
+    return { lat: Number(pinMatch[1]), lng: Number(pinMatch[2]) };
+  }
+  const atMatch = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(rawUrl);
+  if (atMatch) {
+    return { lat: Number(atMatch[1]), lng: Number(atMatch[2]) };
+  }
+  const qMatch = /[?&](?:q|query|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(rawUrl);
+  if (qMatch) {
+    return { lat: Number(qMatch[1]), lng: Number(qMatch[2]) };
+  }
+  return null;
+}
+
+export function searchMapsUrl(query: string, lat?: number, lng?: number): string {
+  if (typeof lat === 'number' && typeof lng === 'number') {
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query.trim())}`;
 }
 
 export function itineraryMapsUrl(
-  stops: Array<{ name: string; addr?: string }>
+  stops: Array<{
+    name: string;
+    addr?: string;
+    link?: string;
+    lat?: number;
+    lng?: number;
+  }>
 ): string {
   const validStops = stops.filter((s) => s.name.trim().length > 0);
   if (validStops.length === 0) return 'https://www.google.com/maps';
+
+  const toWaypoint = (s: (typeof validStops)[number]): string => {
+    if (typeof s.lat === 'number' && typeof s.lng === 'number') {
+      return `${s.lat},${s.lng}`;
+    }
+    const fromLink = s.link ? extractCoordsFromMapsUrl(s.link) : null;
+    if (fromLink) {
+      return `${fromLink.lat},${fromLink.lng}`;
+    }
+    return `${s.name} ${s.addr ?? ''}`.trim();
+  };
+
   if (validStops.length === 1) {
-    return searchMapsUrl(`${validStops[0].name} ${validStops[0].addr ?? ''}`.trim());
+    const s = validStops[0];
+    return searchMapsUrl(`${s.name} ${s.addr ?? ''}`.trim(), s.lat, s.lng);
   }
-  const waypoints = validStops
-    .map((s) => encodeURIComponent(`${s.name} ${s.addr ?? ''}`.trim()))
-    .join('/');
-  return `https://www.google.com/maps/dir/${waypoints}`;
+
+  const points = validStops.map(toWaypoint);
+  const url = new URL('https://www.google.com/maps/dir/');
+  url.searchParams.set('api', '1');
+  url.searchParams.set('origin', points[0]);
+  url.searchParams.set('destination', points[points.length - 1]);
+  if (points.length > 2) {
+    url.searchParams.set('waypoints', points.slice(1, -1).join('|'));
+  }
+  return url.toString();
 }

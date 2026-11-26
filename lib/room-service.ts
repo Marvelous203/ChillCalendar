@@ -27,7 +27,10 @@ export async function resolveRoomContext(
   }
 
   const store = getStore();
-  const event = await store.getEventByCode(code);
+  const [event, user] = await Promise.all([
+    store.getEventByCode(code),
+    getAuthUser(),
+  ]);
   if (!event) {
     return {
       ok: false,
@@ -35,7 +38,6 @@ export async function resolveRoomContext(
     };
   }
 
-  const user = await getAuthUser();
   const token = getParticipantTokenFromRequest(req);
   let participant = token
     ? await store.getParticipantByTokenHash(event.id, hashParticipantToken(token))

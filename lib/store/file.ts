@@ -320,6 +320,21 @@ export const fileStore: StoreAdapter = {
     });
   },
 
+  async updatePlace(eventId, placeId, patch) {
+    return withDb((db) => {
+      const p = db.places.find((item) => item.eventId === eventId && item.id === placeId);
+      if (!p) return null;
+      p.type = patch.type;
+      p.name = patch.name;
+      p.addr = patch.addr;
+      p.link = patch.link;
+      p.imageUrl = patch.imageUrl ?? '';
+      p.note = patch.note ?? '';
+      p.stops = patch.stops ?? [];
+      return { ...p };
+    });
+  },
+
   async deletePlace(eventId, placeId) {
     await withDb((db) => {
       db.places = db.places.filter((p) => !(p.eventId === eventId && p.id === placeId));
