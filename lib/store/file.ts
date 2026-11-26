@@ -75,6 +75,18 @@ export const fileStore: StoreAdapter = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
+  async listJoinedEventsByUser(userId) {
+    const db = await readDb();
+    const joinedEventIds = new Set(
+      db.participants
+        .filter((p) => p.userId === userId && p.status !== 'removed')
+        .map((p) => p.eventId)
+    );
+    return db.events
+      .filter((e) => joinedEventIds.has(e.id) && e.ownerId !== userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
   async getEventByCode(code) {
     const db = await readDb();
     return db.events.find((e) => e.code === code) ?? null;
@@ -172,6 +184,15 @@ export const fileStore: StoreAdapter = {
     );
   },
 
+  async getParticipantByUserId(eventId, userId) {
+    const db = await readDb();
+    return (
+      db.participants.find(
+        (p) => p.eventId === eventId && p.userId === userId
+      ) ?? null
+    );
+  },
+
   async getParticipantById(eventId, participantId) {
     const db = await readDb();
     return (
@@ -181,15 +202,18 @@ export const fileStore: StoreAdapter = {
     );
   },
 
-  async createParticipant(eventId, tokenHash, name, status: MemberStatus) {
+  async createParticipant(eventId, tokenHash, name, status: MemberStatus, userId = null) {
     return withDb((db) => {
       const existing = db.participants.find(
-        (p) => p.eventId === eventId && p.tokenHash === tokenHash
+        (p) =>
+          p.eventId === eventId &&
+          (p.tokenHash === tokenHash || (userId && p.userId === userId))
       );
       if (existing) return existing;
       const p: ParticipantRecord = {
         id: randomUUID(),
         eventId,
+        userId,
         tokenHash,
         name,
         status,
@@ -197,6 +221,17 @@ export const fileStore: StoreAdapter = {
       };
       db.participants.push(p);
       return p;
+    });
+  },
+
+  async linkParticipantUser(eventId, participantId, userId) {
+    await withDb((db) => {
+      const p = db.participants.find(
+        (item) => item.eventId === eventId && item.id === participantId
+      );
+      if (p && !p.userId) {
+        p.userId = userId;
+      }
     });
   },
 

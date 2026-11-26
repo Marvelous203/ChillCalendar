@@ -73,6 +73,7 @@ function mapEvent(row: EventRow): EventRecord {
 interface ParticipantRow {
   id: string;
   event_id: string;
+  user_id?: string | null;
   token_hash: string;
   name: string;
   status: MemberStatus;
@@ -83,6 +84,7 @@ function mapParticipant(row: ParticipantRow): ParticipantRecord {
   return {
     id: row.id,
     eventId: row.event_id,
+    userId: row.user_id ?? null,
     tokenHash: row.token_hash,
     name: row.name,
     status: row.status,
@@ -107,6 +109,28 @@ export const supabaseStore: StoreAdapter = {
       .from('events')
       .select('*')
       .eq('owner_id', ownerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data as EventRow[]).map(mapEvent);
+  },
+
+  async listJoinedEventsByUser(userId) {
+    const sb = getServiceClient();
+    const { data: parts, error: partErr } = await sb
+      .from('participants')
+      .select('event_id')
+      .eq('user_id', userId)
+      .neq('status', 'removed');
+    if (partErr) throw partErr;
+    const ids = Array.from(
+      new Set((parts as Array<{ event_id: string }>).map((p) => p.event_id))
+    );
+    if (ids.length === 0) return [];
+    const { data, error } = await sb
+      .from('events')
+      .select('*')
+      .in('id', ids)
+      .neq('owner_id', userId)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data as EventRow[]).map(mapEvent);
@@ -225,6 +249,18 @@ export const supabaseStore: StoreAdapter = {
     return data ? mapParticipant(data as ParticipantRow) : null;
   },
 
+  async getParticipantByUserId(eventId, userId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('participants')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? mapParticipant(data as ParticipantRow) : null;
+  },
+
   async getParticipantById(eventId, participantId) {
     const sb = getServiceClient();
     const { data, error } = await sb
@@ -237,15 +273,25 @@ export const supabaseStore: StoreAdapter = {
     return data ? mapParticipant(data as ParticipantRow) : null;
   },
 
-  async createParticipant(eventId, tokenHash, name, status) {
+  async createParticipant(eventId, tokenHash, name, status, userId = null) {
     const sb = getServiceClient();
     const { data, error } = await sb
       .from('participants')
-      .insert({ event_id: eventId, token_hash: tokenHash, name, status })
+      .insert({ event_id: eventId, user_id: userId, token_hash: tokenHash, name, status })
       .select('*')
       .single();
     if (error) throw error;
     return mapParticipant(data as ParticipantRow);
+  },
+
+  async linkParticipantUser(eventId, participantId, userId) {
+    const sb = getServiceClient();
+    await sb
+      .from('participants')
+      .update({ user_id: userId })
+      .eq('event_id', eventId)
+      .eq('id', participantId)
+      .is('user_id', null);
   },
 
   async updateParticipantStatus(eventId, participantId, status) {

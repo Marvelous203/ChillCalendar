@@ -26,6 +26,7 @@ export interface EventRecord {
 export interface ParticipantRecord {
   id: string;
   eventId: string;
+  userId?: string | null;
   tokenHash: string;
   name: string;
   status: MemberStatus;

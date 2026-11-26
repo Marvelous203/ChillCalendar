@@ -49,7 +49,7 @@ class RoomFetchError extends Error {
   }
 }
 
-const subscribeNoop = () => () => {};
+const subscribeNoop = () => () => { };
 
 export function RoomPageClient() {
   const params = useParams<{ code: string }>();
@@ -221,13 +221,13 @@ export function RoomPageClient() {
           places: prev.places.map((p) =>
             p.id === placeId
               ? {
-                  ...p,
-                  votedByMe: nextOn,
-                  voteCount: Math.max(0, p.voteCount + (nextOn ? 1 : -1)),
-                  voterIds: nextOn
-                    ? [...p.voterIds, myId]
-                    : p.voterIds.filter((id) => id !== myId),
-                }
+                ...p,
+                votedByMe: nextOn,
+                voteCount: Math.max(0, p.voteCount + (nextOn ? 1 : -1)),
+                voterIds: nextOn
+                  ? [...p.voterIds, myId]
+                  : p.voterIds.filter((id) => id !== myId),
+              }
               : p
           ),
         };
@@ -341,7 +341,7 @@ export function RoomPageClient() {
               <span className="rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-semibold">
                 Bạn: {data.me.name}
               </span>
-              <button
+              {/* <button
                 type="button"
                 onClick={() => {
                   clearParticipantToken(code);
@@ -352,7 +352,7 @@ export function RoomPageClient() {
                 title="Đổi sang tên khác"
               >
                 Đổi người
-              </button>
+              </button> */}
             </>
           )}
           {data.permissions.isOwner && (

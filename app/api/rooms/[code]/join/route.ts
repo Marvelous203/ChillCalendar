@@ -65,7 +65,8 @@ export async function POST(
     ctx.event.id,
     tokenHash,
     parsed.data.name,
-    status
+    status,
+    ctx.userId
   );
 
   return NextResponse.json(

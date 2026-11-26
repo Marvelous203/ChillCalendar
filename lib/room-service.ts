@@ -37,9 +37,20 @@ export async function resolveRoomContext(
 
   const user = await getAuthUser();
   const token = getParticipantTokenFromRequest(req);
-  const participant = token
+  let participant = token
     ? await store.getParticipantByTokenHash(event.id, hashParticipantToken(token))
     : null;
+
+  if (participant && user && participant.userId && participant.userId !== user.id) {
+    participant = null;
+  }
+  if (!participant && user) {
+    participant = await store.getParticipantByUserId(event.id, user.id);
+  }
+  if (participant && user && !participant.userId) {
+    await store.linkParticipantUser(event.id, participant.id, user.id);
+    participant = { ...participant, userId: user.id };
+  }
 
   return {
     ok: true,

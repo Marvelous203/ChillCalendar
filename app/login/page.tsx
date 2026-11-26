@@ -111,7 +111,7 @@ export default function LoginPage() {
 
       await mutate();
       toast(tab === 'register' ? 'Đăng ký thành công!' : 'Đăng nhập thành công!', 'success');
-      router.push('/new');
+      router.push('/');
     } finally {
       setSubmitting(false);
     }
@@ -134,9 +134,8 @@ export default function LoginPage() {
                   setTab(t);
                   setError('');
                 }}
-                className={`relative rounded-xl py-2.5 text-sm font-semibold transition ${
-                  active ? 'text-[var(--primary-fg)]' : 'text-[var(--muted)]'
-                }`}
+                className={`relative rounded-xl py-2.5 text-sm font-semibold transition ${active ? 'text-[var(--primary-fg)]' : 'text-[var(--muted)]'
+                  }`}
               >
                 {active && (
                   <motion.span
@@ -217,9 +216,8 @@ export default function LoginPage() {
               </div>
               {confirmPassword.length > 0 && (
                 <p
-                  className={`mt-1 text-xs font-medium ${
-                    passwordsMatch ? 'text-[var(--primary)]' : 'text-red-500'
-                  }`}
+                  className={`mt-1 text-xs font-medium ${passwordsMatch ? 'text-[var(--primary)]' : 'text-red-500'
+                    }`}
                 >
                   {passwordsMatch ? '✓ Mật khẩu đã khớp' : 'Mật khẩu chưa khớp'}
                 </p>

@@ -26,6 +26,7 @@ create table events (
 create table participants (
   id          uuid primary key default gen_random_uuid(),
   event_id    uuid not null references events(id) on delete cascade,
+  user_id     uuid references auth.users(id) on delete set null,
   token_hash  text not null,
   name        text not null check (char_length(name) between 1 and 40),
   status      text not null default 'approved' check (status in ('pending', 'approved', 'removed')),

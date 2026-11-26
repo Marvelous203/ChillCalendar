@@ -11,22 +11,27 @@ export async function GET() {
     return NextResponse.json({ error: 'Vui lòng đăng nhập' }, { status: 401 });
   }
   const store = getStore();
-  const events = await store.listEventsByOwner(user.id);
+  const [events, joinedEvents] = await Promise.all([
+    store.listEventsByOwner(user.id),
+    store.listJoinedEventsByUser(user.id),
+  ]);
+  const mapSummary = (e: (typeof events)[number]) => ({
+    id: e.id,
+    code: e.code,
+    title: e.title,
+    dates: e.dates,
+    hourFrom: e.hourFrom,
+    hourTo: e.hourTo,
+    visibility: e.visibility,
+    finalizePolicy: e.finalizePolicy,
+    finalDate: e.finalDate,
+    finalFrom: e.finalFrom,
+    finalTo: e.finalTo,
+    createdAt: e.createdAt,
+  });
   return NextResponse.json({
-    events: events.map((e) => ({
-      id: e.id,
-      code: e.code,
-      title: e.title,
-      dates: e.dates,
-      hourFrom: e.hourFrom,
-      hourTo: e.hourTo,
-      visibility: e.visibility,
-      finalizePolicy: e.finalizePolicy,
-      finalDate: e.finalDate,
-      finalFrom: e.finalFrom,
-      finalTo: e.finalTo,
-      createdAt: e.createdAt,
-    })),
+    events: events.map(mapSummary),
+    joinedEvents: joinedEvents.map(mapSummary),
   });
 }
 

@@ -25,7 +25,10 @@ interface EventSummary {
 const fetcher = async (url: string) => {
   const res = await fetch(url);
   if (!res.ok) return null;
-  return res.json() as Promise<{ events: EventSummary[] }>;
+  return res.json() as Promise<{
+    events: EventSummary[];
+    joinedEvents?: EventSummary[];
+  }>;
 };
 
 export default function HomePage() {
@@ -141,6 +144,58 @@ export default function HomePage() {
               ))}
             </div>
           )}
+
+          <div className="pt-4">
+            <h2 className="mb-3 font-display text-xl font-bold">Sự kiện đã tham gia</h2>
+            {!eventsData?.joinedEvents?.length ? (
+              <div className="glass-card p-6 text-center text-sm text-[var(--muted)]">
+                Bạn chưa tham gia sự kiện nào của bạn bè khi đăng nhập tài khoản này.
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {eventsData.joinedEvents.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="glass-card flex flex-col justify-between gap-4 p-5 transition hover:border-[var(--primary)]/40"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <RoomCodeChip code={ev.code} />
+                        <span className="rounded-full border border-[var(--border)] px-2.5 py-0.5 text-[11px] text-[var(--muted)]">
+                          Đã tham gia
+                        </span>
+                      </div>
+                      <Link
+                        href={`/e/${ev.code}`}
+                        className="block font-display text-lg font-bold hover:text-[var(--primary)]"
+                      >
+                        {ev.title}
+                      </Link>
+                      <p className="text-xs text-[var(--muted)] tabular-nums">
+                        {ev.dates.length} ngày • {formatHour(ev.hourFrom)} – {formatHour(ev.hourTo)}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-[var(--border)] pt-3 text-xs">
+                      {ev.finalDate && ev.finalFrom !== null && ev.finalTo !== null ? (
+                        <span className="font-semibold text-[var(--accent)]">
+                          ✓ Đã chốt: {formatDateVi(ev.finalDate).short} ({formatHour(ev.finalFrom)}–
+                          {formatHour(ev.finalTo)})
+                        </span>
+                      ) : (
+                        <span className="text-[var(--muted)]">Đang gom giờ rảnh</span>
+                      )}
+                      <Link
+                        href={`/e/${ev.code}`}
+                        className="font-semibold text-[var(--primary)] hover:underline"
+                      >
+                        Mở phòng →
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       )}
     </div>

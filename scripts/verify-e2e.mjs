@@ -338,6 +338,74 @@ async function runTests() {
     pass('Flexible weekday mode (no fixed dates) -> 201 + save slots');
   }
 
+  // 15. Logged-in friend persistence across sessions & joinedEvents list
+  {
+    const regFriend = await fetch(`${BASE}/api/auth/dev`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'register',
+        email: 'friend@gmail.com',
+        password: 'password123',
+        confirmPassword: 'password123',
+        captchaToken: 'dev-bypass-token',
+      }),
+    });
+    assert.equal(regFriend.status, 200);
+    const friendCookie = (regFriend.headers.get('set-cookie') || '').split(';')[0];
+
+    const createEv = await fetch(`${BASE}/api/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+      body: JSON.stringify({
+        title: 'Đi ăn tối',
+        note: '',
+        dates: [tomorrow],
+        from: 17,
+        to: 21,
+        visibility: 'link',
+        finalizePolicy: 'any_member',
+      }),
+    });
+    assert.equal(createEv.status, 201);
+    const { code: sharedCode } = await createEv.json();
+
+    const joinRes = await fetch(`${BASE}/api/rooms/${sharedCode}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: friendCookie },
+      body: JSON.stringify({ name: 'Bạn B' }),
+    });
+    assert.equal(joinRes.status, 201);
+
+    // Save & reload WITHOUT x-participant-token (simulating re-login / new device)
+    const saveRes = await fetch(`${BASE}/api/rooms/${sharedCode}/response`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Cookie: friendCookie },
+      body: JSON.stringify({ slots: [`${tomorrow}T18`] }),
+    });
+    assert.equal(saveRes.status, 200);
+
+    const reloadRes = await fetch(`${BASE}/api/rooms/${sharedCode}`, {
+      headers: { Cookie: friendCookie },
+    });
+    assert.equal(reloadRes.status, 200);
+    const bundle = await reloadRes.json();
+    assert.equal(bundle.me?.name, 'Bạn B');
+    assert.ok(
+      bundle.responses.some(
+        (r) => r.participantId === bundle.me.id && r.slots.includes(`${tomorrow}T18`)
+      )
+    );
+
+    const listRes = await fetch(`${BASE}/api/events`, {
+      headers: { Cookie: friendCookie },
+    });
+    assert.equal(listRes.status, 200);
+    const listJson = await listRes.json();
+    assert.ok(listJson.joinedEvents.some((e) => e.code === sharedCode));
+    pass('Logged-in friend persistence & joinedEvents list');
+  }
+
   console.log(`\nALL ${results.length} E2E CHECKS PASSED`);
 }
 

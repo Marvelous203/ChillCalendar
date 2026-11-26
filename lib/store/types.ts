@@ -43,6 +43,7 @@ export interface FinalizeInput {
 export interface StoreAdapter {
   countEventsByOwner(ownerId: string): Promise<number>;
   listEventsByOwner(ownerId: string): Promise<EventRecord[]>;
+  listJoinedEventsByUser(userId: string): Promise<EventRecord[]>;
   getEventByCode(code: string): Promise<EventRecord | null>;
   createEvent(input: CreateEventInput): Promise<EventRecord>;
   updateEvent(eventId: string, patch: UpdateEventInput): Promise<EventRecord | null>;
@@ -52,13 +53,16 @@ export interface StoreAdapter {
 
   listParticipants(eventId: string): Promise<ParticipantRecord[]>;
   getParticipantByTokenHash(eventId: string, tokenHash: string): Promise<ParticipantRecord | null>;
+  getParticipantByUserId(eventId: string, userId: string): Promise<ParticipantRecord | null>;
   getParticipantById(eventId: string, participantId: string): Promise<ParticipantRecord | null>;
   createParticipant(
     eventId: string,
     tokenHash: string,
     name: string,
-    status: MemberStatus
+    status: MemberStatus,
+    userId?: string | null
   ): Promise<ParticipantRecord>;
+  linkParticipantUser(eventId: string, participantId: string, userId: string): Promise<void>;
   updateParticipantStatus(
     eventId: string,
     participantId: string,
