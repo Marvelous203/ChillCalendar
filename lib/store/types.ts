@@ -1,0 +1,82 @@
+import type {
+  EventRecord,
+  FinalizePolicy,
+  MemberStatus,
+  ParticipantRecord,
+  PlaceRecord,
+  ResponseRecord,
+  Visibility,
+  VoteRecord,
+} from '../types';
+
+export interface CreateEventInput {
+  code: string;
+  ownerId: string;
+  title: string;
+  note: string;
+  dates: string[];
+  hourFrom: number;
+  hourTo: number;
+  visibility: Visibility;
+  finalizePolicy: FinalizePolicy;
+  inviteToken: string;
+}
+
+export interface UpdateEventInput {
+  title?: string;
+  note?: string;
+  visibility?: Visibility;
+  finalizePolicy?: FinalizePolicy;
+}
+
+export interface FinalizeInput {
+  finalDate: string | null;
+  finalFrom: number | null;
+  finalTo: number | null;
+  finalPlaceId: string | null;
+  finalizedBy: string | null;
+  finalizedAt: string | null;
+}
+
+export interface StoreAdapter {
+  countEventsByOwner(ownerId: string): Promise<number>;
+  listEventsByOwner(ownerId: string): Promise<EventRecord[]>;
+  getEventByCode(code: string): Promise<EventRecord | null>;
+  createEvent(input: CreateEventInput): Promise<EventRecord>;
+  updateEvent(eventId: string, patch: UpdateEventInput): Promise<EventRecord | null>;
+  deleteEvent(eventId: string): Promise<void>;
+  rotateEventCode(eventId: string, newCode: string, newInviteToken?: string): Promise<EventRecord | null>;
+  setFinalize(eventId: string, input: FinalizeInput): Promise<EventRecord | null>;
+
+  listParticipants(eventId: string): Promise<ParticipantRecord[]>;
+  getParticipantByTokenHash(eventId: string, tokenHash: string): Promise<ParticipantRecord | null>;
+  getParticipantById(eventId: string, participantId: string): Promise<ParticipantRecord | null>;
+  createParticipant(
+    eventId: string,
+    tokenHash: string,
+    name: string,
+    status: MemberStatus
+  ): Promise<ParticipantRecord>;
+  updateParticipantStatus(
+    eventId: string,
+    participantId: string,
+    status: MemberStatus
+  ): Promise<ParticipantRecord | null>;
+
+  listResponses(eventId: string): Promise<ResponseRecord[]>;
+  upsertResponse(eventId: string, participantId: string, slots: string[]): Promise<ResponseRecord>;
+
+  listPlaces(eventId: string): Promise<PlaceRecord[]>;
+  getPlaceById(eventId: string, placeId: string): Promise<PlaceRecord | null>;
+  createPlace(
+    eventId: string,
+    participantId: string,
+    name: string,
+    addr: string,
+    link: string
+  ): Promise<PlaceRecord>;
+  deletePlace(eventId: string, placeId: string): Promise<void>;
+
+  listVotesByEvent(eventId: string): Promise<VoteRecord[]>;
+  setVote(placeId: string, participantId: string, on: boolean): Promise<void>;
+}
