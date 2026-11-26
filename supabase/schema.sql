@@ -45,9 +45,13 @@ create table places (
   id              uuid primary key default gen_random_uuid(),
   event_id        uuid not null references events(id) on delete cascade,
   participant_id  uuid not null references participants(id) on delete cascade,
+  type            text not null default 'single' check (type in ('single', 'itinerary')),
   name            text not null check (char_length(name) between 1 and 80),
   addr            text not null default '' check (char_length(addr) <= 160),
   link            text not null default '' check (char_length(link) <= 300),
+  image_url       text not null default '' check (char_length(image_url) <= 500),
+  note            text not null default '' check (char_length(note) <= 200),
+  stops           jsonb not null default '[]'::jsonb,
   created_at      timestamptz not null default now()
 );
 

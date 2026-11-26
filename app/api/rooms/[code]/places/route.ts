@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { validateGoogleMapsUrl } from '@/lib/maps';
+import { itineraryMapsUrl, searchMapsUrl, validateGoogleMapsUrl } from '@/lib/maps';
 import { canDeletePlace } from '@/lib/permissions';
 import { resolveRoomContext } from '@/lib/room-service';
 import { getStore } from '@/lib/store';
@@ -36,21 +36,53 @@ export async function POST(
     );
   }
 
-  const normalizedLink = validateGoogleMapsUrl(parsed.data.link);
-  if (normalizedLink === null) {
-    return NextResponse.json(
-      { error: 'Link Google Maps không hợp lệ' },
-      { status: 400 }
-    );
+  const { type, imageUrl, note } = parsed.data;
+
+  if (type === 'single') {
+    const normalizedLink = validateGoogleMapsUrl(parsed.data.link);
+    if (normalizedLink === null) {
+      return NextResponse.json({ error: 'Link Google Maps không hợp lệ' }, { status: 400 });
+    }
+    const finalLink =
+      normalizedLink || searchMapsUrl(`${parsed.data.name} ${parsed.data.addr}`.trim());
+
+    const place = await getStore().createPlace({
+      eventId: ctx.event.id,
+      participantId: ctx.participant.id,
+      type: 'single',
+      name: parsed.data.name,
+      addr: parsed.data.addr,
+      link: finalLink,
+      imageUrl,
+      note,
+      stops: [],
+    });
+    return NextResponse.json({ place }, { status: 201 });
   }
 
-  const place = await getStore().createPlace(
-    ctx.event.id,
-    ctx.participant.id,
-    parsed.data.name,
-    parsed.data.addr,
-    normalizedLink
-  );
+  const normalizedStops = parsed.data.stops.map((s) => {
+    const valid = validateGoogleMapsUrl(s.link);
+    return {
+      ...s,
+      link: valid || searchMapsUrl(`${s.name} ${s.addr}`.trim()),
+    };
+  });
+
+  const title =
+    parsed.data.name.trim() || `Lộ trình ${normalizedStops.length} chặng`;
+  const dirLink = itineraryMapsUrl(normalizedStops);
+
+  const place = await getStore().createPlace({
+    eventId: ctx.event.id,
+    participantId: ctx.participant.id,
+    type: 'itinerary',
+    name: title,
+    addr: normalizedStops.map((s) => s.name).join(' → ').slice(0, 160),
+    link: dirLink,
+    imageUrl: imageUrl || normalizedStops.find((s) => s.imageUrl)?.imageUrl || '',
+    note,
+    stops: normalizedStops,
+  });
 
   return NextResponse.json({ place }, { status: 201 });
 }

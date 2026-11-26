@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import useSWR from 'swr';
 import { TicketCard } from '@/components/TicketCard';
 import { useToast } from '@/components/Toast';
+import { WEEKDAY_KEYS } from '@/lib/dates';
 import { formatHour, todayVN } from '@/lib/timezone';
 import type { FinalizePolicy, Visibility } from '@/lib/types';
 
@@ -41,6 +42,7 @@ export default function NewEventPage() {
 
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [dateMode, setDateMode] = useState<'specific' | 'weekday'>('specific');
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [hourFrom, setHourFrom] = useState(8);
   const [hourTo, setHourTo] = useState(22);
@@ -77,7 +79,9 @@ export default function NewEventPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (selectedDates.length === 0) {
+    const effectiveDates =
+      dateMode === 'weekday' ? [...WEEKDAY_KEYS] : selectedDates;
+    if (effectiveDates.length === 0) {
       toast('Hãy chọn ít nhất 1 ngày', 'error');
       return;
     }
@@ -94,7 +98,7 @@ export default function NewEventPage() {
         body: JSON.stringify({
           title,
           note,
-          dates: selectedDates,
+          dates: effectiveDates,
           from: hourFrom,
           to: hourTo,
           visibility,
@@ -172,62 +176,100 @@ export default function NewEventPage() {
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--muted)]">
-              Chọn ngày ({selectedDates.length}/14)
-            </span>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <button
-                type="button"
-                onClick={() => shiftMonth(-1)}
-                className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs"
-              >
-                ←
-              </button>
-              <span className="tabular-nums">
-                Tháng {viewMonth + 1}/{viewYear}
-              </span>
-              <button
-                type="button"
-                onClick={() => shiftMonth(1)}
-                className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs"
-              >
-                →
-              </button>
+          <div className="grid grid-cols-2 rounded-2xl bg-[var(--bg)] p-1">
+            <button
+              type="button"
+              onClick={() => setDateMode('specific')}
+              className={`rounded-xl py-2 text-xs font-bold transition ${
+                dateMode === 'specific'
+                  ? 'bg-[var(--primary)] text-[var(--primary-fg)] shadow-sm'
+                  : 'text-[var(--muted)]'
+              }`}
+            >
+              Chọn ngày cụ thể
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateMode('weekday')}
+              className={`rounded-xl py-2 text-xs font-bold transition ${
+                dateMode === 'weekday'
+                  ? 'bg-[var(--primary)] text-[var(--primary-fg)] shadow-sm'
+                  : 'text-[var(--muted)]'
+              }`}
+            >
+              Không cần chọn ngày
+            </button>
+          </div>
+
+          {dateMode === 'weekday' ? (
+            <div className="rounded-2xl border border-[var(--primary)]/30 bg-[var(--primary)]/8 p-4 text-xs text-[var(--text)]">
+              <p className="font-semibold text-[var(--primary)]">
+                Chế độ linh hoạt theo thứ trong tuần (Thứ 2 – Chủ nhật)
+              </p>
+              <p className="mt-1 text-[var(--muted)]">
+                Không cần cố định ngày trên lịch. Mọi người chỉ cần chọn thứ & khung giờ thường rảnh.
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[var(--muted)]">
+                  Chọn ngày ({selectedDates.length}/14)
+                </span>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => shiftMonth(-1)}
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs"
+                  >
+                    ←
+                  </button>
+                  <span className="tabular-nums">
+                    Tháng {viewMonth + 1}/{viewYear}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => shiftMonth(1)}
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
 
-          <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold text-[var(--muted)]">
-            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((w) => (
-              <div key={w}>{w}</div>
-            ))}
-          </div>
+              <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold text-[var(--muted)]">
+                {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((w) => (
+                  <div key={w}>{w}</div>
+                ))}
+              </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
-            {monthCells.map((dateStr, idx) => {
-              if (!dateStr) return <div key={`empty-${idx}`} />;
-              const past = todayStr ? dateStr < todayStr : false;
-              const selected = selectedDates.includes(dateStr);
-              const dayNum = Number(dateStr.split('-')[2]);
-              return (
-                <button
-                  key={dateStr}
-                  type="button"
-                  disabled={past}
-                  onClick={() => toggleDate(dateStr)}
-                  className={`h-10 rounded-xl text-xs font-semibold tabular-nums transition ${
-                    selected
-                      ? 'bg-[var(--primary)] text-[var(--primary-fg)] shadow-sm'
-                      : past
-                        ? 'cursor-not-allowed opacity-30'
-                        : 'border border-[var(--border)] bg-[var(--surface-solid)] hover:border-[var(--primary)]'
-                  }`}
-                >
-                  {dayNum}
-                </button>
-              );
-            })}
-          </div>
+              <div className="grid grid-cols-7 gap-1.5">
+                {monthCells.map((dateStr, idx) => {
+                  if (!dateStr) return <div key={`empty-${idx}`} />;
+                  const past = todayStr ? dateStr < todayStr : false;
+                  const selected = selectedDates.includes(dateStr);
+                  const dayNum = Number(dateStr.split('-')[2]);
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      disabled={past}
+                      onClick={() => toggleDate(dateStr)}
+                      className={`h-10 rounded-xl text-xs font-semibold tabular-nums transition ${
+                        selected
+                          ? 'bg-[var(--primary)] text-[var(--primary-fg)] shadow-sm'
+                          : past
+                            ? 'cursor-not-allowed opacity-30'
+                            : 'border border-[var(--border)] bg-[var(--surface-solid)] hover:border-[var(--primary)]'
+                      }`}
+                    >
+                      {dayNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">

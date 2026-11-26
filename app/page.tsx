@@ -46,19 +46,19 @@ export default function HomePage() {
         animate="visible"
         className="glass-card p-6 sm:p-10"
       >
-        <div className="max-w-2xl space-y-5">
+        <div className="max-w-4xl space-y-5">
           <span className="inline-flex items-center gap-2 rounded-full bg-[var(--primary)]/12 px-3.5 py-1 text-xs font-semibold text-[var(--primary)]">
             Không cần cài app • Múi giờ Việt Nam (UTC+7)
           </span>
 
           <h1 className="font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-            Hẹn bạn bè đi chơi,{' '}
-            <span className="text-[var(--primary)]">chốt giờ & quán</span> trong một nốt nhạc.
+            Chill With Me — Bạn đi đâu tôi đi đấy{' '}
+            <span className="text-[var(--primary)]">Không đi cùn nhau những ngày mưa thì đừng tìm nheu những ngày nén</span>
           </h1>
 
           <p className="text-sm leading-relaxed text-[var(--muted)] sm:text-base">
-            Tạo phòng lấy mã <span className="font-mono font-bold text-[var(--text)]">#K7M2QX</span>{' '}
-            và gửi vào nhóm Zalo. Bạn bè chỉ cần nhập tên là chọn được giờ rảnh và bình chọn quán,
+            Tạo phòng lấy mã <span className="font-mono font-bold text-[var(--text)]">#xxxxxx</span>{' '}
+            và gửi vào nhóm bạn. Bạn bè chỉ cần nhập tên là chọn được giờ rảnh và bình chọn quán,
             không cần đăng ký tài khoản.
           </p>
 
@@ -71,7 +71,7 @@ export default function HomePage() {
               href={meData?.user ? '/new' : '/login'}
               className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-bold text-[var(--accent-fg)] shadow-sm transition hover:opacity-90"
             >
-              {meData?.user ? '+ Tạo sự kiện mới' : 'Đăng ký nhanh để tạo phòng'}
+              {meData?.user ? '+ 1 Kỷ niệm' : 'Đăng ký nhanh để tạo phòng'}
             </Link>
             {!meData?.user && (
               <span className="text-xs text-[var(--muted)]">

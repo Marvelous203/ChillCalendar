@@ -214,7 +214,29 @@ async function runTests() {
       body: JSON.stringify({ placeId, on: true }),
     });
     assert.equal(vote.status, 200);
-    pass('Places & Votes (400 bad URL, 201 Maps URL, 200 vote)');
+
+    const itin = await fetch(`${BASE}/api/rooms/${roomCode}/places`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-participant-token': participantToken,
+      },
+      body: JSON.stringify({
+        type: 'itinerary',
+        name: 'Kèo chiều tối',
+        note: 'Đi từ Q1 sang Q3',
+        stops: [
+          { id: 's1', category: 'checkin', time: '16:30', name: 'Nhà thờ Đức Bà', addr: 'Quận 1', link: '' },
+          { id: 's2', category: 'cafe', time: '18:00', name: 'Phúc Long Lê Văn Sỹ', addr: 'Quận 3', link: '' },
+        ],
+      }),
+    });
+    assert.equal(itin.status, 201);
+    const itinJson = await itin.json();
+    assert.equal(itinJson.place.type, 'itinerary');
+    assert.equal(itinJson.place.stops.length, 2);
+    assert.ok(itinJson.place.link.includes('google.com/maps/dir/'));
+    pass('Places, Votes & Itinerary multi-stop Maps URL -> 201/200');
   }
 
   // 11. Permission-denied: non-owner finalize on owner_only room -> 403; owner finalize -> 200
@@ -281,6 +303,41 @@ async function runTests() {
     pass('Private room gate returns 403 { private: true }');
   }
 
+  // 14. Flexible weekday mode (no fixed dates)
+  {
+    const createFlex = await fetch(`${BASE}/api/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+      body: JSON.stringify({
+        title: 'Lịch rảnh linh hoạt',
+        note: '',
+        dates: ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7'],
+        from: 8,
+        to: 22,
+        visibility: 'link',
+        finalizePolicy: 'any_member',
+      }),
+    });
+    assert.equal(createFlex.status, 201);
+    const { code: flexCode } = await createFlex.json();
+
+    const joinRes = await fetch(`${BASE}/api/rooms/${flexCode}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'An' }),
+    });
+    assert.equal(joinRes.status, 201);
+    const { participantToken: pt } = await joinRes.json();
+
+    const saveRes = await fetch(`${BASE}/api/rooms/${flexCode}/response`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-participant-token': pt },
+      body: JSON.stringify({ slots: ['W1T09', 'W6T19'] }),
+    });
+    assert.equal(saveRes.status, 200);
+    pass('Flexible weekday mode (no fixed dates) -> 201 + save slots');
+  }
+
   console.log(`\nALL ${results.length} E2E CHECKS PASSED`);
 }
 
@@ -304,13 +361,18 @@ async function main() {
     await waitForServer();
     await runTests();
   } finally {
-    server.kill('SIGTERM');
+    if (process.platform === 'win32' && server.pid) {
+      spawn('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      server.kill('SIGTERM');
+    }
     await fs.rm(DB_FILE, { force: true });
     if (backupDb !== null) {
       await fs.mkdir(path.dirname(DB_FILE), { recursive: true });
       await fs.writeFile(DB_FILE, backupDb, 'utf8');
     }
   }
+  process.exit(0);
 }
 
 main().catch((err) => {

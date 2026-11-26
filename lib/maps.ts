@@ -37,3 +37,21 @@ export function validateGoogleMapsUrl(raw: string): string | null {
 
   return parsed.toString();
 }
+
+export function searchMapsUrl(query: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query.trim())}`;
+}
+
+export function itineraryMapsUrl(
+  stops: Array<{ name: string; addr?: string }>
+): string {
+  const validStops = stops.filter((s) => s.name.trim().length > 0);
+  if (validStops.length === 0) return 'https://www.google.com/maps';
+  if (validStops.length === 1) {
+    return searchMapsUrl(`${validStops[0].name} ${validStops[0].addr ?? ''}`.trim());
+  }
+  const waypoints = validStops
+    .map((s) => encodeURIComponent(`${s.name} ${s.addr ?? ''}`.trim()))
+    .join('/');
+  return `https://www.google.com/maps/dir/${waypoints}`;
+}

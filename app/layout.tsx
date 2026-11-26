@@ -19,9 +19,9 @@ const beVietnam = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: 'Hẹn Giờ Rảnh — Chốt lịch & chọn quán cùng bạn bè',
+  title: 'Chill With Me — Bạn đi đâu tôi đi đấy',
   description:
-    'Tạo phòng hẹn giờ rảnh chỉ trong 10 giây. Bạn bè vào bằng mã hoặc link, không cần tài khoản.',
+    'Khôn đi cùn nhau những ngày mưa thì đừng tìm nheu những ngày nén',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="vi"
       suppressHydrationWarning
-      className={`${bricolage.variable} ${beVietnam.variable} h-full antialiased`}
+      className={`${bricolage.variable} ${beVietnam.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isWeekdayKey } from './dates';
 import { validateGoogleMapsUrl } from './maps';
 import { isPastDateVN } from './timezone';
 
@@ -32,7 +33,7 @@ export const loginSchema = z.object({
 
 const dateStringSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày không đúng định dạng YYYY-MM-DD');
+  .regex(/^(\d{4}-\d{2}-\d{2}|W[1-7])$/, 'Ngày không đúng định dạng');
 
 export const createEventSchema = z
   .object({
@@ -43,7 +44,7 @@ export const createEventSchema = z
       .min(1, 'Chọn ít nhất 1 ngày')
       .max(14, 'Tối đa 14 ngày')
       .refine(
-        (dates) => dates.every((d) => !isPastDateVN(d)),
+        (dates) => dates.every((d) => isWeekdayKey(d) || !isPastDateVN(d)),
         'Không thể chọn ngày ở quá khứ'
       ),
     from: z.number().int().min(0).max(23),
@@ -70,12 +71,28 @@ export const joinRoomSchema = z.object({
 
 export const saveResponseSchema = z.object({
   slots: z
-    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}$/))
+    .array(z.string().regex(/^(\d{4}-\d{2}-\d{2}|W[1-7])T\d{2}$/))
     .max(400),
 });
 
-export const createPlaceSchema = z.object({
-  name: z.string().trim().min(1, 'Nhập tên địa điểm').max(80, 'Tối đa 80 ký tự'),
+const imageUrlSchema = z
+  .string()
+  .trim()
+  .max(500, 'Link ảnh tối đa 500 ký tự')
+  .default('')
+  .refine(
+    (val) =>
+      val === '' ||
+      val.startsWith('/uploads/') ||
+      val.startsWith('https://'),
+    { message: 'Link ảnh phải bắt đầu bằng https:// hoặc tải lên từ thiết bị' }
+  );
+
+const itineraryStopSchema = z.object({
+  id: z.string().min(1).max(64),
+  category: z.enum(['checkin', 'food', 'cafe', 'play']),
+  time: z.string().trim().max(10).optional().default(''),
+  name: z.string().trim().min(1, 'Nhập tên chặng').max(80, 'Tối đa 80 ký tự'),
   addr: z.string().trim().max(160, 'Tối đa 160 ký tự').default(''),
   link: z
     .string()
@@ -83,9 +100,44 @@ export const createPlaceSchema = z.object({
     .max(300, 'Link tối đa 300 ký tự')
     .default('')
     .refine((val) => validateGoogleMapsUrl(val) !== null, {
-      message: 'Chỉ chấp nhận link Google Maps (https://maps.app.goo.gl/... hoặc google.com/maps/...)',
+      message: 'Link Google Maps không hợp lệ',
     }),
+  imageUrl: imageUrlSchema.optional().default(''),
 });
+
+export const createPlaceSchema = z
+  .object({
+    type: z.enum(['single', 'itinerary']).default('single'),
+    name: z.string().trim().max(80, 'Tối đa 80 ký tự').default(''),
+    addr: z.string().trim().max(160, 'Tối đa 160 ký tự').default(''),
+    link: z
+      .string()
+      .trim()
+      .max(300, 'Link tối đa 300 ký tự')
+      .default('')
+      .refine((val) => validateGoogleMapsUrl(val) !== null, {
+        message: 'Chỉ chấp nhận link Google Maps (https://maps.app.goo.gl/... hoặc google.com/maps/...)',
+      }),
+    imageUrl: imageUrlSchema,
+    note: z.string().trim().max(200, 'Ghi chú tối đa 200 ký tự').default(''),
+    stops: z.array(itineraryStopSchema).max(8, 'Tối đa 8 chặng').default([]),
+  })
+  .superRefine((data, ctx) => {
+    if (data.type === 'single' && data.name.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Nhập tên địa điểm',
+        path: ['name'],
+      });
+    }
+    if (data.type === 'itinerary' && data.stops.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Thêm ít nhất 1 chặng vào lộ trình',
+        path: ['stops'],
+      });
+    }
+  });
 
 export const votePlaceSchema = z.object({
   placeId: z.string().min(1),

@@ -1,0 +1,110 @@
+{
+  "events": [
+    {
+      "id": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "code": "AFW4Z4",
+      "ownerId": "d7d5fa18-2471-4376-8f1f-22f6c5f0de24",
+      "title": "Touring VT",
+      "note": "",
+      "dates": [
+        "2026-11-26",
+        "2026-11-27",
+        "2026-11-28",
+        "2026-11-29"
+      ],
+      "hourFrom": 8,
+      "hourTo": 22,
+      "visibility": "link",
+      "finalizePolicy": "any_member",
+      "inviteToken": "SLqQqDA1Z7DhEMPamxtFAyNdmFbzPBNf",
+      "finalDate": null,
+      "finalFrom": null,
+      "finalTo": null,
+      "finalPlaceId": null,
+      "finalizedBy": null,
+      "finalizedAt": null,
+      "createdAt": "2026-11-26T05:34:28.346Z"
+    }
+  ],
+  "participants": [
+    {
+      "id": "2c169398-b6ee-484b-ba5a-c634d8328fce",
+      "eventId": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "tokenHash": "c541fed6cab29ef9ae9f074972e943a99de25bf777212818d9ef9f2fb0e49f38",
+      "name": "Phát",
+      "status": "approved",
+      "createdAt": "2026-11-26T05:34:51.906Z"
+    },
+    {
+      "id": "63f64b09-6f33-4bf0-a726-f698d0c11f46",
+      "eventId": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "tokenHash": "a269aac86b1727c050b6c9c0c1345a395ea7d528809f5a7792384fb801678824",
+      "name": "Anh",
+      "status": "approved",
+      "createdAt": "2026-11-26T05:42:39.116Z"
+    }
+  ],
+  "responses": [
+    {
+      "eventId": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "participantId": "2c169398-b6ee-484b-ba5a-c634d8328fce",
+      "slots": [
+        "2026-11-26T08",
+        "2026-11-26T09",
+        "2026-11-26T10",
+        "2026-11-26T11",
+        "2026-11-26T12",
+        "2026-11-26T13",
+        "2026-11-26T14",
+        "2026-11-27T09",
+        "2026-11-27T10",
+        "2026-11-27T11",
+        "2026-11-27T12",
+        "2026-11-27T13",
+        "2026-11-27T14"
+      ],
+      "updatedAt": "2026-11-26T05:35:33.581Z"
+    },
+    {
+      "eventId": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "participantId": "63f64b09-6f33-4bf0-a726-f698d0c11f46",
+      "slots": [
+        "2026-11-27T08",
+        "2026-11-27T09",
+        "2026-11-27T10",
+        "2026-11-27T11",
+        "2026-11-28T12",
+        "2026-11-28T13",
+        "2026-11-28T14",
+        "2026-11-28T15",
+        "2026-11-28T16",
+        "2026-11-27T12",
+        "2026-11-27T13",
+        "2026-11-27T14",
+        "2026-11-27T15",
+        "2026-11-27T16",
+        "2026-11-28T08",
+        "2026-11-28T09",
+        "2026-11-28T10",
+        "2026-11-28T11"
+      ],
+      "updatedAt": "2026-11-26T05:43:11.128Z"
+    }
+  ],
+  "places": [
+    {
+      "id": "f87f430a-84a3-41ff-8028-e859d91fefdf",
+      "eventId": "aa800286-2ef8-475f-b0ce-f21e95d63af1",
+      "participantId": "63f64b09-6f33-4bf0-a726-f698d0c11f46",
+      "type": "single",
+      "name": "bia",
+      "addr": "",
+      "link": "https://maps.app.goo.gl/YEBvWdD4t5KB7FXi8",
+      "imageUrl": "https://maps.google.com/maps/api/staticmap?center=10.8174339%2C106.6832808&zoom=17&size=900x900&language=en&sensor=false&key=AIzaSyBoYjeRtfVI0Jd8Q_9mnflo9i4sOYpShB0&signature=49xRQbM47uc_RvY4-OOYAuly9FM",
+      "note": "",
+      "stops": [],
+      "createdAt": "2026-11-26T06:17:11.510Z"
+    }
+  ],
+  "votes": []
+}

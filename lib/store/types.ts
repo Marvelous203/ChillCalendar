@@ -1,9 +1,11 @@
 import type {
   EventRecord,
   FinalizePolicy,
+  ItineraryStop,
   MemberStatus,
   ParticipantRecord,
   PlaceRecord,
+  PlaceType,
   ResponseRecord,
   Visibility,
   VoteRecord,
@@ -68,13 +70,17 @@ export interface StoreAdapter {
 
   listPlaces(eventId: string): Promise<PlaceRecord[]>;
   getPlaceById(eventId: string, placeId: string): Promise<PlaceRecord | null>;
-  createPlace(
-    eventId: string,
-    participantId: string,
-    name: string,
-    addr: string,
-    link: string
-  ): Promise<PlaceRecord>;
+  createPlace(input: {
+    eventId: string;
+    participantId: string;
+    type: PlaceType;
+    name: string;
+    addr: string;
+    link: string;
+    imageUrl?: string;
+    note?: string;
+    stops?: ItineraryStop[];
+  }): Promise<PlaceRecord>;
   deletePlace(eventId: string, placeId: string): Promise<void>;
 
   listVotesByEvent(eventId: string): Promise<VoteRecord[]>;

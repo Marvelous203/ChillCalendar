@@ -46,13 +46,30 @@ export interface ResponseRecord {
   updatedAt: string;
 }
 
+export type PlaceType = 'single' | 'itinerary';
+export type PlaceCategory = 'checkin' | 'food' | 'cafe' | 'play';
+
+export interface ItineraryStop {
+  id: string;
+  category: PlaceCategory;
+  time?: string;
+  name: string;
+  addr: string;
+  link: string;
+  imageUrl?: string;
+}
+
 export interface PlaceRecord {
   id: string;
   eventId: string;
   participantId: string;
+  type: PlaceType;
   name: string;
   addr: string;
   link: string;
+  imageUrl?: string;
+  note?: string;
+  stops?: ItineraryStop[];
   createdAt: string;
 }
 

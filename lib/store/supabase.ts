@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import type {
   EventRecord,
+  ItineraryStop,
   MemberStatus,
   ParticipantRecord,
   PlaceRecord,
+  PlaceType,
   ResponseRecord,
 } from '../types';
 import type {
@@ -310,14 +312,32 @@ export const supabaseStore: StoreAdapter = {
       .eq('event_id', eventId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data as Array<{ id: string; event_id: string; participant_id: string; name: string; addr: string; link: string; created_at: string }>).map(
+    return (
+      data as Array<{
+        id: string;
+        event_id: string;
+        participant_id: string;
+        type?: PlaceType;
+        name: string;
+        addr: string;
+        link: string;
+        image_url?: string;
+        note?: string;
+        stops?: ItineraryStop[];
+        created_at: string;
+      }>
+    ).map(
       (p): PlaceRecord => ({
         id: p.id,
         eventId: p.event_id,
         participantId: p.participant_id,
+        type: p.type ?? 'single',
         name: p.name,
         addr: p.addr,
         link: p.link,
+        imageUrl: p.image_url ?? '',
+        note: p.note ?? '',
+        stops: p.stops ?? [],
         createdAt: p.created_at,
       })
     );
@@ -333,34 +353,76 @@ export const supabaseStore: StoreAdapter = {
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
-    const p = data as { id: string; event_id: string; participant_id: string; name: string; addr: string; link: string; created_at: string };
+    const p = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      type?: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      image_url?: string;
+      note?: string;
+      stops?: ItineraryStop[];
+      created_at: string;
+    };
     return {
       id: p.id,
       eventId: p.event_id,
       participantId: p.participant_id,
+      type: p.type ?? 'single',
       name: p.name,
       addr: p.addr,
       link: p.link,
+      imageUrl: p.image_url ?? '',
+      note: p.note ?? '',
+      stops: p.stops ?? [],
       createdAt: p.created_at,
     };
   },
 
-  async createPlace(eventId, participantId, name, addr, link) {
+  async createPlace(input) {
     const sb = getServiceClient();
     const { data, error } = await sb
       .from('places')
-      .insert({ event_id: eventId, participant_id: participantId, name, addr, link })
+      .insert({
+        event_id: input.eventId,
+        participant_id: input.participantId,
+        type: input.type,
+        name: input.name,
+        addr: input.addr,
+        link: input.link,
+        image_url: input.imageUrl ?? '',
+        note: input.note ?? '',
+        stops: input.stops ?? [],
+      })
       .select('*')
       .single();
     if (error) throw error;
-    const p = data as { id: string; event_id: string; participant_id: string; name: string; addr: string; link: string; created_at: string };
+    const p = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      type?: PlaceType;
+      name: string;
+      addr: string;
+      link: string;
+      image_url?: string;
+      note?: string;
+      stops?: ItineraryStop[];
+      created_at: string;
+    };
     return {
       id: p.id,
       eventId: p.event_id,
       participantId: p.participant_id,
+      type: p.type ?? 'single',
       name: p.name,
       addr: p.addr,
       link: p.link,
+      imageUrl: p.image_url ?? '',
+      note: p.note ?? '',
+      stops: p.stops ?? [],
       createdAt: p.created_at,
     };
   },

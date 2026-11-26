@@ -34,7 +34,7 @@ export function JoinBox() {
               setRaw(e.target.value.toUpperCase());
               if (error) setError('');
             }}
-            placeholder="Nhập mã phòng (vd: K7M2QX)"
+            placeholder="Nhập mã phòng (vd: PHATDZ)"
             maxLength={10}
             aria-label="Mã phòng"
             className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] py-3.5 pl-9 pr-4 font-mono text-base font-semibold tracking-widest text-[var(--text)] outline-none transition focus:border-[var(--primary)]"

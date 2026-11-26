@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DAY_SESSIONS, formatDateVi, hoursRange, makeSlotKey } from '@/lib/dates';
 import { formatHour } from '@/lib/timezone';
 
@@ -11,6 +11,7 @@ export function AvailabilityGrid({
   selectedSlots,
   onChange,
   disabled,
+  onDisabledClick,
 }: {
   dates: string[];
   hourFrom: number;
@@ -18,6 +19,7 @@ export function AvailabilityGrid({
   selectedSlots: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  onDisabledClick?: () => void;
 }) {
   const hours = hoursRange(hourFrom, hourTo);
   const selectedSet = new Set(selectedSlots);
@@ -25,6 +27,21 @@ export function AvailabilityGrid({
   const dragModeRef = useRef<'add' | 'remove' | null>(null);
   const lastKeyRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!dragging) return;
+    function stop() {
+      dragModeRef.current = null;
+      lastKeyRef.current = null;
+      setDragging(false);
+    }
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, [dragging]);
 
   function applySlot(key: string, mode: 'add' | 'remove') {
     const next = new Set(selectedSlots);
@@ -34,7 +51,10 @@ export function AvailabilityGrid({
   }
 
   function handlePointerDown(key: string) {
-    if (disabled) return;
+    if (disabled) {
+      onDisabledClick?.();
+      return;
+    }
     const mode: 'add' | 'remove' = selectedSet.has(key) ? 'remove' : 'add';
     dragModeRef.current = mode;
     lastKeyRef.current = key;
@@ -53,14 +73,11 @@ export function AvailabilityGrid({
     applySlot(slotKey, dragModeRef.current);
   }
 
-  function stopDrag() {
-    dragModeRef.current = null;
-    lastKeyRef.current = null;
-    setDragging(false);
-  }
-
   function toggleSession(date: string, from: number, to: number) {
-    if (disabled) return;
+    if (disabled) {
+      onDisabledClick?.();
+      return;
+    }
     const keys: string[] = [];
     for (let h = Math.max(hourFrom, from); h < Math.min(hourTo, to); h++) {
       keys.push(makeSlotKey(date, h));
@@ -77,12 +94,7 @@ export function AvailabilityGrid({
   }
 
   return (
-    <div
-      onPointerUp={stopDrag}
-      onPointerCancel={stopDrag}
-      onPointerLeave={stopDrag}
-      className="glass-card overflow-hidden p-3 sm:p-5"
-    >
+    <div className="glass-card overflow-hidden p-3 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
         <span>Chạm hoặc kéo ngón tay để tô giờ bạn rảnh.</span>
         <span className="tabular-nums font-medium text-[var(--primary)]">
@@ -97,7 +109,6 @@ export function AvailabilityGrid({
             gridTemplateColumns: `64px repeat(${dates.length}, minmax(108px, 1fr))`,
           }}
         >
-          {/* Header cột ngày + chip chọn nhanh Sáng/Chiều/Tối */}
           <div className="sticky left-0 z-20 bg-[var(--surface-solid)]" />
           {dates.map((date) => {
             const info = formatDateVi(date);
@@ -127,7 +138,6 @@ export function AvailabilityGrid({
             );
           })}
 
-          {/* Các hàng giờ */}
           {hours.map((h) => (
             <div key={`row-${h}`} className="contents">
               <div className="sticky left-0 z-10 flex items-center justify-end bg-[var(--surface-solid)] pr-2 text-[11px] font-medium text-[var(--muted)] tabular-nums">

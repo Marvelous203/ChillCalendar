@@ -242,23 +242,42 @@ export const fileStore: StoreAdapter = {
     const db = await readDb();
     return db.places
       .filter((p) => p.eventId === eventId)
+      .map((p) => ({
+        ...p,
+        type: p.type ?? 'single',
+        imageUrl: p.imageUrl ?? '',
+        note: p.note ?? '',
+        stops: p.stops ?? [],
+      }))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   },
 
   async getPlaceById(eventId, placeId) {
     const db = await readDb();
-    return db.places.find((p) => p.eventId === eventId && p.id === placeId) ?? null;
+    const p = db.places.find((item) => item.eventId === eventId && item.id === placeId);
+    if (!p) return null;
+    return {
+      ...p,
+      type: p.type ?? 'single',
+      imageUrl: p.imageUrl ?? '',
+      note: p.note ?? '',
+      stops: p.stops ?? [],
+    };
   },
 
-  async createPlace(eventId, participantId, name, addr, link) {
+  async createPlace(input) {
     return withDb((db) => {
       const place: PlaceRecord = {
         id: randomUUID(),
-        eventId,
-        participantId,
-        name,
-        addr,
-        link,
+        eventId: input.eventId,
+        participantId: input.participantId,
+        type: input.type,
+        name: input.name,
+        addr: input.addr,
+        link: input.link,
+        imageUrl: input.imageUrl ?? '',
+        note: input.note ?? '',
+        stops: input.stops ?? [],
         createdAt: new Date().toISOString(),
       };
       db.places.push(place);

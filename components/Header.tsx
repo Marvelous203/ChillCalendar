@@ -15,7 +15,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<MeRe
 function getIsDark(): boolean {
   const saved = localStorage.getItem('cwm_theme');
   if (saved) return saved === 'dark';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return true;
 }
 
 function subscribeTheme(cb: () => void): () => void {
@@ -29,7 +29,7 @@ function subscribeTheme(cb: () => void): () => void {
 
 export function Header() {
   const { data, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
-  const dark = useSyncExternalStore(subscribeTheme, getIsDark, () => false);
+  const dark = useSyncExternalStore(subscribeTheme, getIsDark, () => true);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -57,10 +57,10 @@ export function Header() {
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
         <Link href="/" className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary)] text-sm font-bold text-[var(--primary-fg)] shadow-sm">
-            HG
+            -.-
           </span>
           <span className="font-display text-lg font-bold tracking-tight">
-            Hẹn Giờ Rảnh
+            Chill With Me
           </span>
         </Link>
 
@@ -80,7 +80,7 @@ export function Header() {
                 href="/new"
                 className="rounded-full bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--primary-fg)] transition hover:opacity-90 sm:text-sm"
               >
-                + Tạo phòng
+                + Room
               </Link>
               <button
                 type="button"
