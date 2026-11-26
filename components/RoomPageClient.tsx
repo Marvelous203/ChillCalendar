@@ -19,7 +19,6 @@ import { RoomSkeleton } from '@/components/Skeletons';
 import { Tabs } from '@/components/Tabs';
 import { useToast } from '@/components/Toast';
 import {
-  clearParticipantToken,
   getParticipantToken,
   setParticipantToken,
 } from '@/lib/participant-token';
@@ -67,14 +66,6 @@ export function RoomPageClient() {
     () => true,
     () => false
   );
-  const [tokenOverride, setTokenOverride] = useState<string | null | undefined>(undefined);
-  const token =
-    tokenOverride !== undefined
-      ? tokenOverride
-      : isClient
-        ? getParticipantToken(code)
-        : null;
-  const tokenReady = isClient;
 
   const apiUrl = useMemo(() => {
     if (!code) return null;
@@ -84,8 +75,9 @@ export function RoomPageClient() {
   }, [code, inviteToken]);
 
   const { data, error, isLoading, mutate } = useSWR<RoomBundle, RoomFetchError>(
-    tokenReady && apiUrl ? [apiUrl, token] : null,
-    async ([url, pt]: [string, string | null]) => {
+    isClient && apiUrl ? apiUrl : null,
+    async (url: string) => {
+      const pt = getParticipantToken(code);
       const headers: Record<string, string> = {};
       if (pt) headers['x-participant-token'] = pt;
       const res = await fetch(url, { headers });
@@ -118,7 +110,8 @@ export function RoomPageClient() {
 
   function authHeaders(): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) h['x-participant-token'] = token;
+    const pt = getParticipantToken(code);
+    if (pt) h['x-participant-token'] = pt;
     return h;
   }
 
@@ -142,7 +135,6 @@ export function RoomPageClient() {
       }
       if (json.participantToken) {
         setParticipantToken(code, json.participantToken);
-        setTokenOverride(json.participantToken);
       }
       if (json.bundle) {
         await mutate(json.bundle, { revalidate: false });
