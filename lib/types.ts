@@ -1,6 +1,8 @@
 export type Visibility = 'link' | 'private';
 export type FinalizePolicy = 'owner_only' | 'any_member';
 export type MemberStatus = 'pending' | 'approved' | 'removed';
+export type EventStatus = 'voting' | 'finalized' | 'live' | 'done';
+export type EndedBy = 'owner' | 'auto';
 
 export interface EventRecord {
   id: string;
@@ -20,6 +22,9 @@ export interface EventRecord {
   finalPlaceId: string | null;
   finalizedBy: string | null;
   finalizedAt: string | null;
+  liveFrom: string | null;
+  endedAt: string | null;
+  endedBy: EndedBy | null;
   createdAt: string;
 }
 
@@ -45,6 +50,41 @@ export interface ResponseRecord {
   participantId: string;
   slots: string[]; // YYYY-MM-DDTHH
   updatedAt: string;
+}
+
+export interface CheckinRecord {
+  eventId: string;
+  participantId: string;
+  checkedInAt: string;
+  leftAt: string | null;
+  note: string;
+  photoUrl?: string;
+}
+
+export interface PublicCheckin {
+  participantId: string;
+  name: string;
+  checkedInAt: string;
+  note: string;
+  photoUrl: string;
+}
+
+export interface LiveCounts {
+  checkedIn: number;
+  expected: number;
+}
+
+export interface LiveSnapshot {
+  code: string;
+  status: EventStatus;
+  liveFrom: string | null;
+  autoEndAt: string | null;
+  endedAt: string | null;
+  endedBy: EndedBy | null;
+  counts: LiveCounts;
+  checkins: PublicCheckin[];
+  notArrived: Array<{ participantId: string; name: string }>;
+  serverTime: string;
 }
 
 export type PlaceType = 'single' | 'itinerary';
@@ -94,11 +134,16 @@ export interface RoomPermissions {
   canRotateCode: boolean;
   canFinalize: boolean;
   canParticipate: boolean;
+  canCheckin: boolean;
+  canStartEarly: boolean;
+  canEndLive: boolean;
 }
 
 export interface RoomBundle {
   event: Omit<EventRecord, 'inviteToken' | 'ownerId'> & {
     inviteToken?: string;
+    status: EventStatus;
+    autoEndAt: string | null;
   };
   participants: PublicParticipant[];
   responses: Array<{
@@ -107,6 +152,7 @@ export interface RoomBundle {
     updatedAt: string;
   }>;
   places: PublicPlace[];
+  live: LiveSnapshot;
   me: PublicParticipant | null;
   permissions: RoomPermissions;
 }

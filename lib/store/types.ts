@@ -1,4 +1,6 @@
 import type {
+  CheckinRecord,
+  EndedBy,
   EventRecord,
   FinalizePolicy,
   ItineraryStop,
@@ -38,6 +40,7 @@ export interface FinalizeInput {
   finalPlaceId: string | null;
   finalizedBy: string | null;
   finalizedAt: string | null;
+  liveFrom: string | null;
 }
 
 export interface StoreAdapter {
@@ -102,4 +105,15 @@ export interface StoreAdapter {
 
   listVotesByEvent(eventId: string): Promise<VoteRecord[]>;
   setVote(placeId: string, participantId: string, on: boolean): Promise<void>;
+
+  listCheckins(eventId: string): Promise<CheckinRecord[]>;
+  upsertCheckin(input: {
+    eventId: string;
+    participantId: string;
+    note?: string;
+    photoUrl?: string;
+  }): Promise<CheckinRecord>;
+  setLiveStartEarly(eventId: string, liveFromIso: string): Promise<EventRecord | null>;
+  endEvent(eventId: string, endedAtIso: string, endedBy: EndedBy): Promise<EventRecord | null>;
+  listActiveLiveEvents(): Promise<EventRecord[]>;
 }

@@ -160,3 +160,8 @@ export const finalizeRoomSchema = z
 export const updateMemberSchema = z.object({
   status: z.enum(['approved', 'removed']),
 });
+
+export const checkinSchema = z.object({
+  note: z.string().trim().max(200, 'Ghi chú tối đa 200 ký tự').optional().default(''),
+  photoUrl: imageUrlSchema.optional().default(''),
+});

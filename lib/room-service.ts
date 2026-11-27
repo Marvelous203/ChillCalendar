@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthUser, getParticipantTokenFromRequest, hashParticipantToken } from './auth';
+import { buildLiveSnapshot } from './event-lifecycle';
 import { getRoomPermissions } from './permissions';
 import { isValidCode, normalizeCode } from './room-code';
 import { getStore } from './store';
@@ -71,13 +72,15 @@ function toPublicParticipant(p: ParticipantRecord): PublicParticipant {
 
 export async function buildRoomBundle(ctx: RoomContext): Promise<RoomBundle> {
   const store = getStore();
-  const [participants, responses, places, votes] = await Promise.all([
+  const [participants, responses, places, votes, checkins] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listPlaces(ctx.event.id),
     store.listVotesByEvent(ctx.event.id),
+    store.listCheckins(ctx.event.id),
   ]);
 
+  const live = buildLiveSnapshot(ctx.event, participants, responses, checkins);
   const permissions = getRoomPermissions(ctx.event, ctx.userId, ctx.participant);
   const visibleParticipants = permissions.isOwner
     ? participants.filter((p) => p.status !== 'removed')
@@ -110,6 +113,11 @@ export async function buildRoomBundle(ctx: RoomContext): Promise<RoomBundle> {
       finalPlaceId: ctx.event.finalPlaceId,
       finalizedBy: ctx.event.finalizedBy,
       finalizedAt: ctx.event.finalizedAt,
+      liveFrom: ctx.event.liveFrom,
+      endedAt: live.endedAt,
+      endedBy: live.endedBy,
+      status: live.status,
+      autoEndAt: live.autoEndAt,
       createdAt: ctx.event.createdAt,
     },
     participants: visibleParticipants.map(toPublicParticipant),
@@ -127,6 +135,7 @@ export async function buildRoomBundle(ctx: RoomContext): Promise<RoomBundle> {
         voterIds,
       };
     }),
+    live,
     me: ctx.participant ? toPublicParticipant(ctx.participant) : null,
     permissions,
   };

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
+  CheckinRecord,
+  EndedBy,
   EventRecord,
   MemberStatus,
   ParticipantRecord,
@@ -22,25 +24,36 @@ interface DbShape {
   responses: ResponseRecord[];
   places: PlaceRecord[];
   votes: VoteRecord[];
+  checkins: CheckinRecord[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 let writeLock: Promise<void> = Promise.resolve();
 
+function normalizeEvent(ev: EventRecord): EventRecord {
+  return {
+    ...ev,
+    liveFrom: ev.liveFrom ?? null,
+    endedAt: ev.endedAt ?? null,
+    endedBy: ev.endedBy ?? null,
+  };
+}
+
 async function readDb(): Promise<DbShape> {
   try {
     const raw = await fs.readFile(DB_PATH, 'utf8');
     const parsed = JSON.parse(raw) as Partial<DbShape>;
     return {
-      events: parsed.events ?? [],
+      events: (parsed.events ?? []).map(normalizeEvent),
       participants: parsed.participants ?? [],
       responses: parsed.responses ?? [],
       places: parsed.places ?? [],
       votes: parsed.votes ?? [],
+      checkins: parsed.checkins ?? [],
     };
   } catch {
-    return { events: [], participants: [], responses: [], places: [], votes: [] };
+    return { events: [], participants: [], responses: [], places: [], votes: [], checkins: [] };
   }
 }
 
@@ -112,6 +125,9 @@ export const fileStore: StoreAdapter = {
         finalPlaceId: null,
         finalizedBy: null,
         finalizedAt: null,
+        liveFrom: null,
+        endedAt: null,
+        endedBy: null,
         createdAt: new Date().toISOString(),
       };
       db.events.push(record);
@@ -141,6 +157,7 @@ export const fileStore: StoreAdapter = {
       );
       db.places = db.places.filter((p) => p.eventId !== eventId);
       db.votes = db.votes.filter((v) => !removedPlaceIds.has(v.placeId));
+      db.checkins = db.checkins.filter((c) => c.eventId !== eventId);
     });
   },
 
@@ -164,6 +181,7 @@ export const fileStore: StoreAdapter = {
       ev.finalPlaceId = input.finalPlaceId;
       ev.finalizedBy = input.finalizedBy;
       ev.finalizedAt = input.finalizedAt;
+      ev.liveFrom = input.liveFrom;
       return { ...ev };
     });
   },
@@ -362,5 +380,59 @@ export const fileStore: StoreAdapter = {
         db.votes.push({ placeId, participantId });
       }
     });
+  },
+
+  async listCheckins(eventId) {
+    const db = await readDb();
+    return db.checkins
+      .filter((c) => c.eventId === eventId)
+      .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt));
+  },
+
+  async upsertCheckin({ eventId, participantId, note, photoUrl }) {
+    return withDb((db) => {
+      const existing = db.checkins.find(
+        (c) => c.eventId === eventId && c.participantId === participantId
+      );
+      if (existing) {
+        if (note !== undefined) existing.note = note;
+        if (photoUrl !== undefined) existing.photoUrl = photoUrl;
+        return { ...existing };
+      }
+      const record: CheckinRecord = {
+        eventId,
+        participantId,
+        checkedInAt: new Date().toISOString(),
+        leftAt: null,
+        note: note ?? '',
+        photoUrl: photoUrl ?? '',
+      };
+      db.checkins.push(record);
+      return record;
+    });
+  },
+
+  async setLiveStartEarly(eventId, liveFromIso) {
+    return withDb((db) => {
+      const ev = db.events.find((e) => e.id === eventId);
+      if (!ev) return null;
+      ev.liveFrom = liveFromIso;
+      return { ...ev };
+    });
+  },
+
+  async endEvent(eventId, endedAtIso, endedBy: EndedBy) {
+    return withDb((db) => {
+      const ev = db.events.find((e) => e.id === eventId);
+      if (!ev) return null;
+      ev.endedAt = endedAtIso;
+      ev.endedBy = endedBy;
+      return { ...ev };
+    });
+  },
+
+  async listActiveLiveEvents() {
+    const db = await readDb();
+    return db.events.filter((e) => Boolean(e.liveFrom) && !e.endedAt);
   },
 };

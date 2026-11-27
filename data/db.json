@@ -17,13 +17,66 @@
       "visibility": "link",
       "finalizePolicy": "any_member",
       "inviteToken": "ASgs_ME7pf7rRdzlL-SymPVxEenmnFxH",
+      "finalDate": "2026-11-26",
+      "finalFrom": 8,
+      "finalTo": 12,
+      "finalPlaceId": "f832863b-a3e4-44d0-ac38-baafca072dfe",
+      "finalizedBy": "Phát",
+      "finalizedAt": "2026-11-27T03:34:01.761Z",
+      "createdAt": "2026-11-26T06:31:12.063Z",
+      "liveFrom": "2026-11-26T00:30:00.000Z",
+      "endedAt": null,
+      "endedBy": null
+    },
+    {
+      "id": "d5552ec5-b912-4e59-8d6a-66df61611a7d",
+      "code": "JBFZK2",
+      "ownerId": "3ffb6d6c-11f8-4f64-8c7e-13bbdf925574",
+      "title": "Live WS Test",
+      "note": "Test live mode",
+      "dates": [
+        "2026-11-27"
+      ],
+      "hourFrom": 18,
+      "hourTo": 22,
+      "visibility": "link",
+      "finalizePolicy": "owner_only",
+      "inviteToken": "I8jQ6ds00NGBkY7p2qtwShkd3nFroZts",
       "finalDate": null,
       "finalFrom": null,
       "finalTo": null,
       "finalPlaceId": null,
       "finalizedBy": null,
       "finalizedAt": null,
-      "createdAt": "2026-11-26T06:31:12.063Z"
+      "liveFrom": null,
+      "endedAt": null,
+      "endedBy": null,
+      "createdAt": "2026-11-27T03:21:54.498Z"
+    },
+    {
+      "id": "95161eb3-6603-4228-b4c2-2fa231781366",
+      "code": "MYA6AE",
+      "ownerId": "d7d5fa18-2471-4376-8f1f-22f6c5f0de24",
+      "title": "test",
+      "note": "",
+      "dates": [
+        "2026-11-27"
+      ],
+      "hourFrom": 10,
+      "hourTo": 14,
+      "visibility": "link",
+      "finalizePolicy": "any_member",
+      "inviteToken": "8wvEYRHwSRiBV-pw_TeQlJOYZe5ILhi4",
+      "finalDate": "2026-11-27",
+      "finalFrom": 11,
+      "finalTo": 12,
+      "finalPlaceId": null,
+      "finalizedBy": "Phát",
+      "finalizedAt": "2026-11-27T03:35:56.422Z",
+      "liveFrom": "2026-11-27T03:30:00.000Z",
+      "endedAt": "2026-11-27T03:36:45.232Z",
+      "endedBy": "owner",
+      "createdAt": "2026-11-27T03:35:38.651Z"
     }
   ],
   "participants": [
@@ -44,6 +97,24 @@
       "name": "Tuan",
       "status": "approved",
       "createdAt": "2026-11-26T06:32:06.981Z"
+    },
+    {
+      "id": "1c98a459-6581-4cfc-b878-b71b096c46af",
+      "eventId": "d5552ec5-b912-4e59-8d6a-66df61611a7d",
+      "userId": "3ffb6d6c-11f8-4f64-8c7e-13bbdf925574",
+      "tokenHash": "2f9f9035d5a91d88bfc6d2c1252d9f1ad150a66881ab0e959d2f39e6a7d8f30c",
+      "name": "Owner Tester",
+      "status": "approved",
+      "createdAt": "2026-11-27T03:21:54.537Z"
+    },
+    {
+      "id": "cb0d5cf2-6b60-4456-95cd-4a6516a8ad94",
+      "eventId": "95161eb3-6603-4228-b4c2-2fa231781366",
+      "userId": "d7d5fa18-2471-4376-8f1f-22f6c5f0de24",
+      "tokenHash": "62808311f324db3969026f6a6596e453cbd28ed60d7c98d7e1a0c30bb68b6497",
+      "name": "Phát",
+      "status": "approved",
+      "createdAt": "2026-11-27T03:35:46.554Z"
     }
   ],
   "responses": [
@@ -90,6 +161,14 @@
         "2026-11-26T11"
       ],
       "updatedAt": "2026-11-26T06:32:35.737Z"
+    },
+    {
+      "eventId": "95161eb3-6603-4228-b4c2-2fa231781366",
+      "participantId": "cb0d5cf2-6b60-4456-95cd-4a6516a8ad94",
+      "slots": [
+        "2026-11-27T11"
+      ],
+      "updatedAt": "2026-11-27T03:35:53.024Z"
     }
   ],
   "places": [
@@ -158,5 +237,15 @@
       "createdAt": "2026-11-26T06:40:27.501Z"
     }
   ],
-  "votes": []
+  "votes": [],
+  "checkins": [
+    {
+      "eventId": "95161eb3-6603-4228-b4c2-2fa231781366",
+      "participantId": "cb0d5cf2-6b60-4456-95cd-4a6516a8ad94",
+      "checkedInAt": "2026-11-27T03:36:01.784Z",
+      "leftAt": null,
+      "note": "",
+      "photoUrl": "/uploads/4525c2a1-4fe5-4e05-b695-88d2ff671031.webp"
+    }
+  ]
 }
