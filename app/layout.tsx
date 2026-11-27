@@ -20,8 +20,11 @@ const beVietnam = Be_Vietnam_Pro({
 
 export const metadata: Metadata = {
   title: 'Chill With Me — Bạn đi đâu tôi đi đấy',
+  icons: {
+    icon: '/favicon.svg',
+  },
   description:
-    'Khôn đi cùn nhau những ngày mưa thì đừng tìm nheu những ngày nén',
+    'Không đi cùng nhau những ngày mưa thì đừng tìm nhau những ngày nắng',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
