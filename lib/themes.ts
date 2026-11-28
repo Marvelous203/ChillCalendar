@@ -91,3 +91,41 @@ export function useAppTheme(): [ThemeId, (next: ThemeId) => void] {
   const theme = useSyncExternalStore(subscribeTheme, getSavedTheme, () => DEFAULT_THEME);
   return [theme, setSavedTheme];
 }
+
+const BLOSSOM_KEY = 'cwm_blossom';
+const BLOSSOM_EVENT = 'cwm-blossom';
+
+export function getSavedBlossom(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const v = window.localStorage.getItem(BLOSSOM_KEY);
+    return v === null ? true : v === '1';
+  } catch {
+    return true;
+  }
+}
+
+export function setSavedBlossom(enabled: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(BLOSSOM_KEY, enabled ? '1' : '0');
+    window.dispatchEvent(new Event(BLOSSOM_EVENT));
+  } catch {
+    // Bỏ qua nếu bị chặn storage
+  }
+}
+
+function subscribeBlossom(cb: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(BLOSSOM_EVENT, cb);
+  window.addEventListener('storage', cb);
+  return () => {
+    window.removeEventListener(BLOSSOM_EVENT, cb);
+    window.removeEventListener('storage', cb);
+  };
+}
+
+export function useBlossomEffect(): [boolean, (next: boolean) => void] {
+  const enabled = useSyncExternalStore(subscribeBlossom, getSavedBlossom, () => false);
+  return [enabled, setSavedBlossom];
+}

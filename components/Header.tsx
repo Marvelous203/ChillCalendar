@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
-import { applyThemeToDocument, THEMES, useAppTheme } from '@/lib/themes';
+import { applyThemeToDocument, THEMES, useAppTheme, useBlossomEffect } from '@/lib/themes';
 import { UserAvatar } from './UserAvatar';
 
 interface MeResponse {
@@ -17,6 +17,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<MeRe
 export function Header() {
   const { data, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
   const [theme, setTheme] = useAppTheme();
+  const [blossom, setBlossom] = useBlossomEffect();
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +68,22 @@ export function Header() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {/* Nút bật/tắt hiệu ứng Hoa Đào Rơi */}
+          <button
+            type="button"
+            onClick={() => setBlossom(!blossom)}
+            aria-pressed={blossom}
+            title={blossom ? 'Tắt hiệu ứng hoa đào' : 'Bật hiệu ứng hoa đào'}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${
+              blossom
+                ? 'border-pink-400/50 bg-pink-500/15 text-pink-300'
+                : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--muted)] hover:text-[var(--text)]'
+            }`}
+          >
+            <span>🌸</span>
+            <span className="hidden sm:inline">{blossom ? 'Hoa đào' : 'Tắt hoa'}</span>
+          </button>
+
           {/* Bộ chọn Theme đóng gói */}
           <div ref={menuRef} className="relative">
             <button

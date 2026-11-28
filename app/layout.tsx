@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Be_Vietnam_Pro, Bricolage_Grotesque } from 'next/font/google';
 import { Background } from '@/components/Background';
+import { BlossomOverlay } from '@/components/BlossomOverlay';
 import { Header } from '@/components/Header';
 import { Providers } from '@/components/Providers';
 import { WebViewBanner } from '@/components/WebViewBanner';
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full flex flex-col">
         <Providers>
           <Background />
+          <BlossomOverlay />
           <WebViewBanner />
           <Header />
           <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:py-8">
