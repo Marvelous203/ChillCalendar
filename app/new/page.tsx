@@ -6,7 +6,7 @@ import useSWR from 'swr';
 import { TicketCard } from '@/components/TicketCard';
 import { useToast } from '@/components/Toast';
 import { WEEKDAY_KEYS } from '@/lib/dates';
-import { formatHour, todayVN } from '@/lib/timezone';
+import { currentHourVN, formatHour, todayVN } from '@/lib/timezone';
 import type { FinalizePolicy, Visibility } from '@/lib/types';
 
 const subscribeNoop = () => () => {};
@@ -59,8 +59,21 @@ export default function NewEventPage() {
 
   const monthCells = useMemo(() => getMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
+  const minHourToday = useSyncExternalStore(
+    subscribeNoop,
+    () => currentHourVN() + 1,
+    () => 0
+  );
+  const includesToday =
+    dateMode === 'specific' && Boolean(todayStr) && selectedDates.includes(todayStr);
+
   function toggleDate(d: string) {
     if (todayStr && d < todayStr) return;
+    if (todayStr && d === todayStr && minHourToday > 23) {
+      toast('Hôm nay đã hết khung giờ tương lai, vui lòng chọn từ ngày mai', 'error');
+      return;
+    }
+    const isAdding = !selectedDates.includes(d);
     setSelectedDates((prev) => {
       if (prev.includes(d)) return prev.filter((x) => x !== d);
       if (prev.length >= 14) {
@@ -69,6 +82,12 @@ export default function NewEventPage() {
       }
       return [...prev, d].sort();
     });
+    if (isAdding && todayStr && d === todayStr && hourFrom < minHourToday) {
+      setHourFrom(minHourToday);
+      if (hourTo <= minHourToday) {
+        setHourTo(Math.min(24, minHourToday + 1));
+      }
+    }
   }
 
   function shiftMonth(delta: number) {
@@ -87,6 +106,10 @@ export default function NewEventPage() {
     }
     if (hourFrom >= hourTo) {
       toast('Giờ kết thúc phải lớn hơn giờ bắt đầu', 'error');
+      return;
+    }
+    if (includesToday && hourFrom < minHourToday) {
+      toast('Không thể chọn giờ ở quá khứ cho ngày hôm nay', 'error');
       return;
     }
 
@@ -283,7 +306,7 @@ export default function NewEventPage() {
               className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2.5 text-sm"
             >
               {Array.from({ length: 24 }, (_, h) => (
-                <option key={h} value={h}>
+                <option key={h} value={h} disabled={includesToday && h < minHourToday}>
                   {formatHour(h)}
                 </option>
               ))}
@@ -299,7 +322,11 @@ export default function NewEventPage() {
               className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2.5 text-sm"
             >
               {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
-                <option key={h} value={h}>
+                <option
+                  key={h}
+                  value={h}
+                  disabled={h <= hourFrom || (includesToday && h <= minHourToday)}
+                >
                   {formatHour(h)}
                 </option>
               ))}

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { isWeekdayKey } from './dates';
 import { validateGoogleMapsUrl } from './maps';
-import { isPastDateVN } from './timezone';
+import { currentHourVN, isPastDateVN, todayVN } from './timezone';
 
 export const registerSchema = z
   .object({
@@ -55,7 +55,14 @@ export const createEventSchema = z
   .refine((d) => d.from < d.to, {
     message: 'Giờ kết thúc phải lớn hơn giờ bắt đầu',
     path: ['to'],
-  });
+  })
+  .refine(
+    (d) => !d.dates.includes(todayVN()) || d.from > currentHourVN(),
+    {
+      message: 'Không thể chọn giờ ở quá khứ cho ngày hôm nay',
+      path: ['from'],
+    }
+  );
 
 export const updateRoomSchema = z.object({
   title: z.string().trim().min(1).max(80).optional(),

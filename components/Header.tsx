@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import { applyThemeToDocument, THEMES, useAppTheme } from '@/lib/themes';
 import { UserAvatar } from './UserAvatar';
 
 interface MeResponse {
@@ -13,35 +14,26 @@ interface MeResponse {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<MeResponse>);
 
-function getIsDark(): boolean {
-  const saved = localStorage.getItem('cwm_theme');
-  if (saved) return saved === 'dark';
-  return true;
-}
-
-function subscribeTheme(cb: () => void): () => void {
-  window.addEventListener('cwm-theme', cb);
-  window.addEventListener('storage', cb);
-  return () => {
-    window.removeEventListener('cwm-theme', cb);
-    window.removeEventListener('storage', cb);
-  };
-}
-
 export function Header() {
   const { data, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
-  const dark = useSyncExternalStore(subscribeTheme, getIsDark, () => true);
+  const [theme, setTheme] = useAppTheme();
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    document.documentElement.classList.toggle('light', !dark);
-  }, [dark]);
+    applyThemeToDocument(theme);
+  }, [theme]);
 
-  function toggleTheme() {
-    const next = !dark;
-    localStorage.setItem('cwm_theme', next ? 'dark' : 'light');
-    window.dispatchEvent(new Event('cwm-theme'));
-  }
+  useEffect(() => {
+    if (!themeMenuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setThemeMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [themeMenuOpen]);
 
   async function handleLogout() {
     if (data?.authMode === 'dev') {
@@ -53,27 +45,74 @@ export function Header() {
     await mutate();
   }
 
+  const currentTheme = THEMES.find((t) => t.id === theme) ?? THEMES[0];
+
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--surface)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary)] text-sm font-bold text-[var(--primary-fg)] shadow-sm">
-            -.-
-          </span>
+          {theme === 't1' ? (
+            <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-black ring-1 ring-[var(--primary)]/60 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/themes/t1-logo.png" alt="T1" className="h-7 w-7 object-contain" />
+            </span>
+          ) : (
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary)] text-sm font-bold text-[var(--primary-fg)] shadow-sm">
+              -.-
+            </span>
+          )}
           <span className="font-display text-lg font-bold tracking-tight">
             Chill With Me
           </span>
         </Link>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label="Đổi giao diện Sáng/Tối"
-            className="rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:opacity-85"
-          >
-            {dark ? '☀️ Sáng' : '🌙 Tối'}
-          </button>
+          {/* Bộ chọn Theme đóng gói */}
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setThemeMenuOpen((v) => !v)}
+              aria-label="Chọn giao diện"
+              aria-expanded={themeMenuOpen}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:border-[var(--primary)]"
+            >
+              <span>{currentTheme.icon}</span>
+              <span>{currentTheme.shortLabel}</span>
+              <span className="text-[10px] text-[var(--muted)]">▾</span>
+            </button>
+
+            {themeMenuOpen && (
+              <div className="absolute right-0 top-11 z-40 w-44 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-1.5 shadow-xl backdrop-blur-xl">
+                {THEMES.map((item) => {
+                  const active = item.id === theme;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setTheme(item.id);
+                        setThemeMenuOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                        active
+                          ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
+                          : 'text-[var(--text)] hover:bg-[var(--bg)]/60'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>{item.icon}</span>
+                        <span>{item.label}</span>
+                      </span>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full ring-1 ring-white/40"
+                        style={{ backgroundColor: item.swatch }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {data?.user ? (
             <>

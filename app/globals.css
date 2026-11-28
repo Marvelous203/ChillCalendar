@@ -13,7 +13,8 @@
   --border: rgba(238, 245, 247, 0.12);
 }
 
-html.light {
+html.light,
+html[data-theme="light"] {
   --bg: #F4F7F8;
   --surface: rgba(255, 255, 255, 0.72);
   --surface-solid: #FFFFFF;
@@ -24,6 +25,19 @@ html.light {
   --text: #0F1C22;
   --muted: #5A6B73;
   --border: rgba(15, 28, 34, 0.1);
+}
+
+html[data-theme="t1"] {
+  --bg: #080305;
+  --surface: rgba(22, 8, 12, 0.72);
+  --surface-solid: #15070B;
+  --primary: #E4002B;
+  --primary-fg: #FFFFFF;
+  --accent: #FF3B5C;
+  --accent-fg: #FFFFFF;
+  --text: #FAF2F4;
+  --muted: #B998A0;
+  --border: rgba(228, 0, 43, 0.25);
 }
 
 body {
