@@ -8,6 +8,7 @@ import { HomeStarButton, HomeStarLogCard } from '@/components/HomeStarButton';
 import { JoinBox } from '@/components/JoinBox';
 import { RoomCodeChip } from '@/components/RoomCodeChip';
 import { EventListSkeleton } from '@/components/Skeletons';
+import { useAuth } from '@/lib/auth-client';
 import { formatDateVi } from '@/lib/dates';
 import { fadeSlideUp } from '@/lib/motion';
 import { formatHour } from '@/lib/timezone';
@@ -38,12 +39,10 @@ const fetcher = async (url: string) => {
 const SHOW_HOME_STAR = true;
 
 export default function HomePage() {
-  const { data: meData } = useSWR<{ user: { id: string; email: string } | null }>(
-    '/api/auth/me',
-    (u: string) => fetch(u).then((r) => r.json())
-  );
+  const { user } = useAuth();
+  const meData = { user };
   const { data: eventsData, isLoading: eventsLoading } = useSWR(
-    meData?.user ? '/api/events' : null,
+    user ? '/api/events' : null,
     fetcher
   );
 

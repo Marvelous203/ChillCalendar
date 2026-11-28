@@ -2,9 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import useSWR from 'swr';
 import { TicketCard } from '@/components/TicketCard';
 import { useToast } from '@/components/Toast';
+import { useAuth } from '@/lib/auth-client';
 import { WEEKDAY_KEYS } from '@/lib/dates';
 import { currentHourVN, formatHour, todayVN } from '@/lib/timezone';
 import type { FinalizePolicy, Visibility } from '@/lib/types';
@@ -27,10 +27,7 @@ function getMonthGrid(year: number, monthIndex: number): Array<string | null> {
 export default function NewEventPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { data: meData, isLoading } = useSWR<{ user: { id: string; email: string } | null }>(
-    '/api/auth/me',
-    (u: string) => fetch(u).then((r) => r.json())
-  );
+  const { user, isLoading } = useAuth();
 
   const todayStr = useSyncExternalStore(
     subscribeNoop,
@@ -52,10 +49,10 @@ export default function NewEventPage() {
   const [created, setCreated] = useState<{ code: string; inviteToken: string } | null>(null);
 
   useEffect(() => {
-    if (!isLoading && meData && !meData.user) {
+    if (!isLoading && !user) {
       router.replace('/login');
     }
-  }, [isLoading, meData, router]);
+  }, [isLoading, user, router]);
 
   const monthCells = useMemo(() => getMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 

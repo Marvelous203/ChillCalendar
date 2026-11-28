@@ -1,12 +1,15 @@
 'use client';
 
 import { MotionConfig } from 'motion/react';
+import { AuthProvider } from '@/lib/auth-client';
 import { ToastProvider } from './Toast';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <MotionConfig reducedMotion="user">
-      <ToastProvider>{children}</ToastProvider>
+      <AuthProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </AuthProvider>
     </MotionConfig>
   );
 }

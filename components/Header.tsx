@@ -2,20 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import useSWR from 'swr';
+import { useAuth } from '@/lib/auth-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { applyThemeToDocument, THEMES, useAppTheme, useBlossomEffect } from '@/lib/themes';
 import { UserAvatar } from './UserAvatar';
 
-interface MeResponse {
-  user: { id: string; email: string } | null;
-  authMode: 'dev' | 'supabase';
-}
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<MeResponse>);
-
 export function Header() {
-  const { data, mutate } = useSWR<MeResponse>('/api/auth/me', fetcher);
+  const { user, authMode, refreshAuth } = useAuth();
   const [theme, setTheme] = useAppTheme();
   const [blossom, setBlossom] = useBlossomEffect();
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -37,13 +30,13 @@ export function Header() {
   }, [themeMenuOpen]);
 
   async function handleLogout() {
-    if (data?.authMode === 'dev') {
+    if (authMode === 'dev') {
       await fetch('/api/auth/dev', { method: 'DELETE' });
     } else {
       const sb = createSupabaseBrowserClient();
       await sb.auth.signOut();
     }
-    await mutate();
+    await refreshAuth();
   }
 
   const currentTheme = THEMES.find((t) => t.id === theme) ?? THEMES[0];
@@ -131,7 +124,7 @@ export function Header() {
             )}
           </div>
 
-          {data?.user ? (
+          {user ? (
             <>
               <Link
                 href="/new"
@@ -144,7 +137,7 @@ export function Header() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] py-1 pl-1 pr-2.5 text-xs font-semibold hover:border-[var(--primary)]"
                 title="Hồ sơ người dùng"
               >
-                <UserAvatar name={data.user.email.split('@')[0] || 'U'} size="sm" />
+                <UserAvatar name={user.email.split('@')[0] || 'U'} size="sm" />
                 <span className="hidden sm:inline">Hồ sơ</span>
               </Link>
               <button

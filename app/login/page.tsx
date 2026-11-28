@@ -4,8 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
-import useSWR from 'swr';
 import { useToast } from '@/components/Toast';
+import { useAuth } from '@/lib/auth-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { loginSchema, registerSchema } from '@/lib/validation';
 
@@ -23,12 +23,9 @@ function LoginPageInner() {
   const { toast } = useToast();
   const turnstileRef = useRef<TurnstileInstance | undefined>(undefined);
 
-  const { data: meData, mutate } = useSWR<{
-    user: { id: string; email: string } | null;
-    authMode: 'dev' | 'supabase';
-  }>('/api/auth/me', (u: string) => fetch(u).then((r) => r.json()));
+  const { user, authMode, refreshAuth } = useAuth();
 
-  const isDevMode = meData?.authMode === 'dev';
+  const isDevMode = authMode === 'dev';
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
 
   const initialTab = searchParams.get('tab') === 'register' ? 'register' : 'login';
@@ -43,10 +40,10 @@ function LoginPageInner() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (meData?.user) {
+    if (user) {
       router.replace('/new');
     }
-  }, [meData?.user, router]);
+  }, [user, router]);
 
   const effectiveCaptcha = isDevMode || !siteKey ? 'dev-bypass-token' : captchaToken;
 
@@ -111,7 +108,7 @@ function LoginPageInner() {
         }
       }
 
-      await mutate();
+      await refreshAuth();
       toast(tab === 'register' ? 'Đăng ký thành công!' : 'Đăng nhập thành công!', 'success');
       router.push('/');
     } finally {

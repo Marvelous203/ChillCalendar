@@ -8,6 +8,7 @@ import { RoomCodeChip } from '@/components/RoomCodeChip';
 import { ProfileSkeleton } from '@/components/Skeletons';
 import { useToast } from '@/components/Toast';
 import { UserAvatar } from '@/components/UserAvatar';
+import { useAuth } from '@/lib/auth-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 interface ProfileEvent {
@@ -45,10 +46,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
   const { data, isLoading, mutate } = useSWR<ProfileResponse | null>('/api/profile', fetcher);
-  const { data: meData, mutate: mutateMe } = useSWR<{ authMode: 'dev' | 'supabase' }>(
-    '/api/auth/me',
-    (u: string) => fetch(u).then((r) => r.json())
-  );
+  const { authMode, refreshAuth } = useAuth();
 
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -89,13 +87,13 @@ export default function ProfilePage() {
   }
 
   async function handleLogout() {
-    if (meData?.authMode === 'dev') {
+    if (authMode === 'dev') {
       await fetch('/api/auth/dev', { method: 'DELETE' });
     } else {
       const sb = createSupabaseBrowserClient();
       await sb.auth.signOut();
     }
-    await mutateMe();
+    await refreshAuth();
     router.replace('/');
   }
 
