@@ -60,12 +60,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  const [participants, responses, checkins] = await Promise.all([
+  const [participants, responses, checkins, moments] = await Promise.all([
     store.listParticipants(updated.id),
     store.listResponses(updated.id),
     store.listCheckins(updated.id),
+    store.listMoments(updated.id),
   ]);
-  const snapshot = buildLiveSnapshot(updated, participants, responses, checkins);
+  const snapshot = buildLiveSnapshot(updated, participants, responses, checkins, moments);
 
   await broadcastRoomEvent(updated.code, {
     type: 'ended',

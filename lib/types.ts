@@ -61,12 +61,30 @@ export interface CheckinRecord {
   photoUrl?: string;
 }
 
+export interface LiveMomentRecord {
+  id: string;
+  eventId: string;
+  participantId: string;
+  photoUrl: string;
+  caption: string;
+  createdAt: string;
+}
+
+export interface PublicMoment {
+  id: string;
+  participantId: string;
+  photoUrl: string;
+  caption: string;
+  createdAt: string;
+}
+
 export interface PublicCheckin {
   participantId: string;
   name: string;
   checkedInAt: string;
   note: string;
   photoUrl: string;
+  moments: PublicMoment[];
 }
 
 export interface LiveCounts {
@@ -154,5 +172,6 @@ export interface RoomBundle {
   places: PublicPlace[];
   live: LiveSnapshot;
   me: PublicParticipant | null;
+  autoParticipantToken?: string;
   permissions: RoomPermissions;
 }

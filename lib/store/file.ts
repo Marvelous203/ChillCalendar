@@ -5,6 +5,7 @@ import type {
   CheckinRecord,
   EndedBy,
   EventRecord,
+  LiveMomentRecord,
   MemberStatus,
   ParticipantRecord,
   PlaceRecord,
@@ -25,6 +26,7 @@ interface DbShape {
   places: PlaceRecord[];
   votes: VoteRecord[];
   checkins: CheckinRecord[];
+  moments: LiveMomentRecord[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
@@ -51,9 +53,10 @@ async function readDb(): Promise<DbShape> {
       places: parsed.places ?? [],
       votes: parsed.votes ?? [],
       checkins: parsed.checkins ?? [],
+      moments: parsed.moments ?? [],
     };
   } catch {
-    return { events: [], participants: [], responses: [], places: [], votes: [], checkins: [] };
+    return { events: [], participants: [], responses: [], places: [], votes: [], checkins: [], moments: [] };
   }
 }
 
@@ -158,6 +161,7 @@ export const fileStore: StoreAdapter = {
       db.places = db.places.filter((p) => p.eventId !== eventId);
       db.votes = db.votes.filter((v) => !removedPlaceIds.has(v.placeId));
       db.checkins = db.checkins.filter((c) => c.eventId !== eventId);
+      db.moments = db.moments.filter((m) => m.eventId !== eventId);
     });
   },
 
@@ -434,5 +438,33 @@ export const fileStore: StoreAdapter = {
   async listActiveLiveEvents() {
     const db = await readDb();
     return db.events.filter((e) => Boolean(e.liveFrom) && !e.endedAt);
+  },
+
+  async listMoments(eventId) {
+    const db = await readDb();
+    return db.moments
+      .filter((m) => m.eventId === eventId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async createMoment(input) {
+    return withDb((db) => {
+      const record: LiveMomentRecord = {
+        id: randomUUID(),
+        eventId: input.eventId,
+        participantId: input.participantId,
+        photoUrl: input.photoUrl,
+        caption: input.caption,
+        createdAt: new Date().toISOString(),
+      };
+      db.moments.push(record);
+      return record;
+    });
+  },
+
+  async deleteMoment(eventId, momentId) {
+    await withDb((db) => {
+      db.moments = db.moments.filter((m) => !(m.eventId === eventId && m.id === momentId));
+    });
   },
 };

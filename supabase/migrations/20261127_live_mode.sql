@@ -19,6 +19,18 @@ create table if not exists checkins (
 alter table checkins enable row level security;
 create index if not exists checkins_event_checked_idx on checkins (event_id, checked_in_at desc);
 
+create table if not exists live_moments (
+  id              uuid primary key default gen_random_uuid(),
+  event_id        uuid not null references events(id) on delete cascade,
+  participant_id  uuid not null references participants(id) on delete cascade,
+  photo_url       text not null check (char_length(photo_url) between 1 and 500),
+  caption         text not null default '' check (char_length(caption) <= 200),
+  created_at      timestamptz not null default now()
+);
+
+alter table live_moments enable row level security;
+create index if not exists live_moments_event_created_idx on live_moments (event_id, created_at desc);
+
 grant usage on schema public to service_role;
 grant all privileges on all tables in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;

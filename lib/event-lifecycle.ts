@@ -4,9 +4,11 @@ import type {
   CheckinRecord,
   EventRecord,
   EventStatus,
+  LiveMomentRecord,
   LiveSnapshot,
   ParticipantRecord,
   PublicCheckin,
+  PublicMoment,
   ResponseRecord,
 } from './types';
 
@@ -82,6 +84,7 @@ export function buildLiveSnapshot(
   participants: ParticipantRecord[],
   responses: ResponseRecord[],
   checkins: CheckinRecord[],
+  moments: LiveMomentRecord[] = [],
   now: Date = new Date()
 ): LiveSnapshot {
   const status = computeEventStatus(event, now);
@@ -111,16 +114,53 @@ export function buildLiveSnapshot(
     }
   }
 
+  const momentsByParticipant = new Map<string, PublicMoment[]>();
+  for (const m of moments) {
+    if (!participantById.has(m.participantId)) continue;
+    const arr = momentsByParticipant.get(m.participantId) ?? [];
+    arr.push({
+      id: m.id,
+      participantId: m.participantId,
+      photoUrl: m.photoUrl,
+      caption: m.caption,
+      createdAt: m.createdAt,
+    });
+    momentsByParticipant.set(m.participantId, arr);
+  }
+  for (const arr of momentsByParticipant.values()) {
+    arr.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   const publicCheckins: PublicCheckin[] = checkins
     .filter((c) => participantById.has(c.participantId))
     .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt))
-    .map((c) => ({
-      participantId: c.participantId,
-      name: participantById.get(c.participantId)!.name,
-      checkedInAt: c.checkedInAt,
-      note: c.note ?? '',
-      photoUrl: c.photoUrl ?? '',
-    }));
+    .map((c) => {
+      const userMoments = momentsByParticipant.get(c.participantId) ?? [];
+      // Tương thích ngược nếu có ảnh cũ trong checkins.photoUrl mà chưa nằm trong moments
+      const mergedMoments: PublicMoment[] =
+        userMoments.length > 0
+          ? userMoments
+          : c.photoUrl
+            ? [
+                {
+                  id: `checkin-${c.participantId}`,
+                  participantId: c.participantId,
+                  photoUrl: c.photoUrl,
+                  caption: c.note ?? '',
+                  createdAt: c.checkedInAt,
+                },
+              ]
+            : [];
+      const latestMoment = mergedMoments[0];
+      return {
+        participantId: c.participantId,
+        name: participantById.get(c.participantId)!.name,
+        checkedInAt: c.checkedInAt,
+        note: c.note || latestMoment?.caption || '',
+        photoUrl: latestMoment?.photoUrl || c.photoUrl || '',
+        moments: mergedMoments,
+      };
+    });
 
   const checkedInSet = new Set(publicCheckins.map((c) => c.participantId));
   const notArrived = Array.from(rsvpParticipantIds)

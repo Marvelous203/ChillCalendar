@@ -5,6 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 export interface AuthUser {
   id: string;
   email: string;
+  displayName?: string;
 }
 
 export const DEV_AUTH_COOKIE = 'cwm_dev_user';
@@ -64,7 +65,13 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user || !data.user.email) return null;
-  return { id: data.user.id, email: data.user.email };
+  const meta = data.user.user_metadata as Record<string, unknown> | undefined;
+  const displayName =
+    (typeof meta?.display_name === 'string' && meta.display_name) ||
+    (typeof meta?.full_name === 'string' && meta.full_name) ||
+    (typeof meta?.name === 'string' && meta.name) ||
+    undefined;
+  return { id: data.user.id, email: data.user.email, displayName };
 }
 
 export function getParticipantTokenFromRequest(req: Request): string | null {

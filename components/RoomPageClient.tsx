@@ -88,6 +88,9 @@ export function RoomPageClient() {
       if (!res.ok) {
         throw new RoomFetchError(res.status, json);
       }
+      if (json.autoParticipantToken) {
+        setParticipantToken(code, json.autoParticipantToken);
+      }
       return json;
     },
     { refreshInterval: 8000, keepPreviousData: true }
@@ -371,6 +374,35 @@ export function RoomPageClient() {
     }
   }
 
+  async function handleAddMoment(payload: { photoUrl: string; caption: string }) {
+    const res = await fetch(`/api/rooms/${code}/moments`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể đăng khoảnh khắc', 'error');
+      throw new Error(json.error ?? 'Không thể đăng khoảnh khắc');
+    }
+    setLiveSnapshot(json);
+    toast('Đã đăng khoảnh khắc mới!', 'success');
+  }
+
+  async function handleDeleteMoment(momentId: string) {
+    const res = await fetch(
+      `/api/rooms/${code}/moments?momentId=${encodeURIComponent(momentId)}`,
+      { method: 'DELETE', headers: authHeaders() }
+    );
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể xóa ảnh', 'error');
+      return;
+    }
+    setLiveSnapshot(json);
+    toast('Đã xóa ảnh khoảnh khắc', 'info');
+  }
+
   async function handleEndLive() {
     const res = await fetch(`/api/rooms/${code}/end`, {
       method: 'POST',
@@ -519,9 +551,12 @@ export function RoomPageClient() {
           snapshot={liveSnapshot}
           connectionMode={connectionMode}
           myParticipantId={data.me?.id ?? null}
+          isOwner={data.permissions.isOwner}
           canCheckin={data.permissions.canCheckin}
           canEndLive={data.permissions.canEndLive}
           onCheckin={handleCheckin}
+          onAddMoment={handleAddMoment}
+          onDeleteMoment={handleDeleteMoment}
           onEndLive={handleEndLive}
         />
       )}

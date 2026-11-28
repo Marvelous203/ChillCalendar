@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthUser, getParticipantTokenFromRequest, hashParticipantToken } from './auth';
+import { type AuthUser, getAuthUser, getParticipantTokenFromRequest, hashParticipantToken } from './auth';
 import { buildLiveSnapshot } from './event-lifecycle';
 import { getRoomPermissions } from './permissions';
 import { isValidCode, normalizeCode } from './room-code';
@@ -9,6 +9,7 @@ import type { EventRecord, ParticipantRecord, PublicParticipant, RoomBundle } fr
 export interface RoomContext {
   event: EventRecord;
   userId: string | null;
+  user: AuthUser | null;
   participant: ParticipantRecord | null;
 }
 
@@ -57,7 +58,7 @@ export async function resolveRoomContext(
 
   return {
     ok: true,
-    ctx: { event, userId: user?.id ?? null, participant },
+    ctx: { event, userId: user?.id ?? null, user, participant },
   };
 }
 
@@ -72,15 +73,16 @@ function toPublicParticipant(p: ParticipantRecord): PublicParticipant {
 
 export async function buildRoomBundle(ctx: RoomContext): Promise<RoomBundle> {
   const store = getStore();
-  const [participants, responses, places, votes, checkins] = await Promise.all([
+  const [participants, responses, places, votes, checkins, moments] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listPlaces(ctx.event.id),
     store.listVotesByEvent(ctx.event.id),
     store.listCheckins(ctx.event.id),
+    store.listMoments(ctx.event.id),
   ]);
 
-  const live = buildLiveSnapshot(ctx.event, participants, responses, checkins);
+  const live = buildLiveSnapshot(ctx.event, participants, responses, checkins, moments);
   const permissions = getRoomPermissions(ctx.event, ctx.userId, ctx.participant);
   const visibleParticipants = permissions.isOwner
     ? participants.filter((p) => p.status !== 'removed')

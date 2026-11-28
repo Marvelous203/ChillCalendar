@@ -4,6 +4,7 @@ import type {
   EventRecord,
   FinalizePolicy,
   ItineraryStop,
+  LiveMomentRecord,
   MemberStatus,
   ParticipantRecord,
   PlaceRecord,
@@ -116,4 +117,13 @@ export interface StoreAdapter {
   setLiveStartEarly(eventId: string, liveFromIso: string): Promise<EventRecord | null>;
   endEvent(eventId: string, endedAtIso: string, endedBy: EndedBy): Promise<EventRecord | null>;
   listActiveLiveEvents(): Promise<EventRecord[]>;
+
+  listMoments(eventId: string): Promise<LiveMomentRecord[]>;
+  createMoment(input: {
+    eventId: string;
+    participantId: string;
+    photoUrl: string;
+    caption: string;
+  }): Promise<LiveMomentRecord>;
+  deleteMoment(eventId: string, momentId: string): Promise<void>;
 }

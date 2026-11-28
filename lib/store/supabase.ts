@@ -4,6 +4,7 @@ import type {
   EndedBy,
   EventRecord,
   ItineraryStop,
+  LiveMomentRecord,
   MemberStatus,
   ParticipantRecord,
   PlaceRecord,
@@ -718,5 +719,75 @@ export const supabaseStore: StoreAdapter = {
       .is('ended_at', null);
     if (error) throw error;
     return (data as EventRow[]).map(mapEvent);
+  },
+
+  async listMoments(eventId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .select('*')
+      .eq('event_id', eventId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (
+      data as Array<{
+        id: string;
+        event_id: string;
+        participant_id: string;
+        photo_url: string;
+        caption: string;
+        created_at: string;
+      }>
+    ).map(
+      (m): LiveMomentRecord => ({
+        id: m.id,
+        eventId: m.event_id,
+        participantId: m.participant_id,
+        photoUrl: m.photo_url,
+        caption: m.caption ?? '',
+        createdAt: m.created_at,
+      })
+    );
+  },
+
+  async createMoment(input) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .insert({
+        event_id: input.eventId,
+        participant_id: input.participantId,
+        photo_url: input.photoUrl,
+        caption: input.caption ?? '',
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+    const m = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      photo_url: string;
+      caption: string;
+      created_at: string;
+    };
+    return {
+      id: m.id,
+      eventId: m.event_id,
+      participantId: m.participant_id,
+      photoUrl: m.photo_url,
+      caption: m.caption ?? '',
+      createdAt: m.created_at,
+    };
+  },
+
+  async deleteMoment(eventId, momentId) {
+    const sb = getServiceClient();
+    const { error } = await sb
+      .from('live_moments')
+      .delete()
+      .eq('event_id', eventId)
+      .eq('id', momentId);
+    if (error) throw error;
   },
 };

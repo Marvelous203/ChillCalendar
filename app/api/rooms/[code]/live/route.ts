@@ -19,13 +19,14 @@ export async function GET(
   }
 
   const store = getStore();
-  const [participants, responses, checkins] = await Promise.all([
+  const [participants, responses, checkins, moments] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listCheckins(ctx.event.id),
+    store.listMoments(ctx.event.id),
   ]);
 
-  const snapshot = buildLiveSnapshot(ctx.event, participants, responses, checkins);
+  const snapshot = buildLiveSnapshot(ctx.event, participants, responses, checkins, moments);
   const res = NextResponse.json(snapshot);
   if (ctx.participant && ctx.participant.status === 'approved') {
     res.headers.set('x-cwm-verified', '1');
