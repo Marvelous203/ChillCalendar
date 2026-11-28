@@ -19,13 +19,34 @@ const beVietnam = Be_Vietnam_Pro({
   weight: ['400', '500', '600', '700'],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://chill-calendar-in4w.vercel.app';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: 'Chill With Me — Bạn đi đâu tôi đi đấy',
   icons: {
-    icon: '/favicon.svg',
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/apple-icon', type: 'image/png', sizes: '180x180' },
+    ],
+    apple: [{ url: '/apple-icon', sizes: '180x180', type: 'image/png' }],
   },
   description:
     'Không đi cùng nhau những ngày mưa thì đừng tìm nhau những ngày nắng',
+  openGraph: {
+    type: 'website',
+    locale: 'vi_VN',
+    siteName: 'Chill With Me',
+    title: 'Chill With Me — Bạn đi đâu tôi đi đấy',
+    description:
+      'Hẹn giờ rảnh, bình chọn địa điểm, check-in Live và lưu album kỷ niệm cùng nhóm bạn.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Chill With Me — Bạn đi đâu tôi đi đấy',
+    description:
+      'Hẹn giờ rảnh, bình chọn địa điểm, check-in Live và lưu album kỷ niệm cùng nhóm bạn.',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
