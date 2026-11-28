@@ -138,4 +138,18 @@ export interface StoreAdapter {
     emoji: ReactionEmoji,
     mode: 'toggle' | 'set'
   ): Promise<{ active: boolean }>;
+
+  getAppStarStatus(voterKey: string | null): Promise<{
+    count: number;
+    starred: boolean;
+    recentLogs: Array<{ name: string; createdAt: string }>;
+  }>;
+  toggleAppStar(
+    voterKey: string,
+    displayName: string
+  ): Promise<{
+    count: number;
+    starred: boolean;
+    recentLogs: Array<{ name: string; createdAt: string }>;
+  }>;
 }

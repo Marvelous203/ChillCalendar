@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import useSWR from 'swr';
 import { motion } from 'motion/react';
+import { HomeGuideTimeline } from '@/components/HomeGuideTimeline';
+import { HomeStarButton, HomeStarLogCard } from '@/components/HomeStarButton';
 import { JoinBox } from '@/components/JoinBox';
 import { RoomCodeChip } from '@/components/RoomCodeChip';
 import { EventListSkeleton } from '@/components/Skeletons';
@@ -32,6 +34,9 @@ const fetcher = async (url: string) => {
   }>;
 };
 
+// Đổi thành false nếu muốn ẩn nút Star ở trang chủ sau này
+const SHOW_HOME_STAR = true;
+
 export default function HomePage() {
   const { data: meData } = useSWR<{ user: { id: string; email: string } | null }>(
     '/api/auth/me',
@@ -43,7 +48,7 @@ export default function HomePage() {
   );
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <motion.section
         variants={fadeSlideUp}
         initial="hidden"
@@ -57,7 +62,9 @@ export default function HomePage() {
 
           <h1 className="font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
             Chill With Me — Bạn đi đâu tôi đi đấy{' '}
-            <span className="text-[var(--primary)]">Không đi cùn nhau những ngày mưa thì đừng tìm nheu những ngày nén</span>
+            <span className="text-[var(--primary)]">
+              Không đi cùng nhau những ngày mưa thì đừng tìm nhau những ngày nắng
+            </span>
           </h1>
 
           <p className="text-sm leading-relaxed text-[var(--muted)] sm:text-base">
@@ -72,11 +79,15 @@ export default function HomePage() {
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Link
-              href={meData?.user ? '/new' : '/login'}
+              href={meData?.user ? '/new' : '/login?tab=register'}
               className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-bold text-[var(--accent-fg)] shadow-sm transition hover:opacity-90"
             >
               {meData?.user ? '+ 1 Kỷ niệm' : 'Đăng ký nhanh để tạo phòng'}
             </Link>
+            <HomeStarButton
+              enabled={SHOW_HOME_STAR}
+              isLoggedIn={Boolean(meData?.user)}
+            />
             {!meData?.user && (
               <span className="text-xs text-[var(--muted)]">
                 Chỉ cần Gmail & mật khẩu, vào tạo ngay lập tức.
@@ -85,6 +96,18 @@ export default function HomePage() {
           </div>
         </div>
       </motion.section>
+
+      <div className="grid gap-5 lg:grid-cols-12 lg:items-start">
+        <div className={SHOW_HOME_STAR ? 'lg:col-span-8' : 'lg:col-span-12'}>
+          <HomeGuideTimeline isLoggedIn={Boolean(meData?.user)} />
+        </div>
+
+        {SHOW_HOME_STAR && (
+          <div className="lg:col-span-4">
+            <HomeStarLogCard enabled={SHOW_HOME_STAR} />
+          </div>
+        )}
+      </div>
 
       {meData?.user && (
         <section className="space-y-4">

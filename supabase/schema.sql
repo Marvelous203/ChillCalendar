@@ -94,6 +94,12 @@ create table live_moment_reactions (
   primary key (moment_id, participant_id, emoji)
 );
 
+create table app_stars (
+  voter_key    text primary key,
+  display_name text not null default '',
+  created_at   timestamptz not null default now()
+);
+
 alter table events add foreign key (final_place) references places(id) on delete set null;
 
 -- Bật RLS và không tạo policy: chỉ service_role ở server mới truy cập được
@@ -105,6 +111,7 @@ alter table votes        enable row level security;
 alter table checkins     enable row level security;
 alter table live_moments enable row level security;
 alter table live_moment_reactions enable row level security;
+alter table app_stars enable row level security;
 
 create index on events (owner_id);
 create index on participants (event_id);

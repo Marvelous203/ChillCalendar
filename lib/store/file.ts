@@ -29,6 +29,7 @@ interface DbShape {
   checkins: CheckinRecord[];
   moments: LiveMomentRecord[];
   momentReactions: MomentReactionRecord[];
+  appStars: Array<string | { voterKey: string; displayName: string; createdAt: string }>;
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
@@ -57,6 +58,7 @@ async function readDb(): Promise<DbShape> {
       checkins: parsed.checkins ?? [],
       moments: parsed.moments ?? [],
       momentReactions: parsed.momentReactions ?? [],
+      appStars: parsed.appStars ?? [],
     };
   } catch {
     return {
@@ -68,6 +70,7 @@ async function readDb(): Promise<DbShape> {
       checkins: [],
       moments: [],
       momentReactions: [],
+      appStars: [],
     };
   }
 }
@@ -517,6 +520,53 @@ export const fileStore: StoreAdapter = {
       }
       db.momentReactions.push({ momentId, participantId, emoji });
       return { active: true };
+    });
+  },
+
+  async getAppStarStatus(voterKey) {
+    const db = await readDb();
+    const normalized = db.appStars.map((item) =>
+      typeof item === 'string'
+        ? { voterKey: item, displayName: 'Thành viên', createdAt: '' }
+        : item
+    );
+    const recentLogs = [...normalized]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 15)
+      .map((x) => ({ name: x.displayName || 'Thành viên', createdAt: x.createdAt }));
+    return {
+      count: normalized.length,
+      starred: Boolean(voterKey && normalized.some((x) => x.voterKey === voterKey)),
+      recentLogs,
+    };
+  },
+
+  async toggleAppStar(voterKey, displayName) {
+    return withDb((db) => {
+      const normalized = db.appStars.map((item) =>
+        typeof item === 'string'
+          ? { voterKey: item, displayName: 'Thành viên', createdAt: new Date().toISOString() }
+          : item
+      );
+      const idx = normalized.findIndex((x) => x.voterKey === voterKey);
+      let starred: boolean;
+      if (idx >= 0) {
+        normalized.splice(idx, 1);
+        starred = false;
+      } else {
+        normalized.push({
+          voterKey,
+          displayName: displayName || 'Thành viên',
+          createdAt: new Date().toISOString(),
+        });
+        starred = true;
+      }
+      db.appStars = normalized;
+      const recentLogs = [...normalized]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 15)
+        .map((x) => ({ name: x.displayName || 'Thành viên', createdAt: x.createdAt }));
+      return { count: normalized.length, starred, recentLogs };
     });
   },
 };

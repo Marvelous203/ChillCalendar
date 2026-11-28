@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import useSWR from 'swr';
@@ -17,8 +17,9 @@ function mapAuthError(msg: string): string {
   return msg || 'Có lỗi xảy ra, vui lòng thử lại';
 }
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const turnstileRef = useRef<TurnstileInstance | undefined>(undefined);
 
@@ -30,7 +31,8 @@ export default function LoginPage() {
   const isDevMode = meData?.authMode === 'dev';
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
 
-  const [tab, setTab] = useState<'login' | 'register'>('register');
+  const initialTab = searchParams.get('tab') === 'register' ? 'register' : 'login';
+  const [tab, setTab] = useState<'login' | 'register'>(initialTab);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -260,5 +262,13 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-md py-12 text-center text-sm text-[var(--muted)]">Đang tải…</div>}>
+      <LoginPageInner />
+    </Suspense>
   );
 }

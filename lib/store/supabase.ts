@@ -885,4 +885,79 @@ export const supabaseStore: StoreAdapter = {
     if (error) throw error;
     return { active: true };
   },
+
+  async getAppStarStatus(voterKey) {
+    const sb = getServiceClient();
+    const [{ count, error }, { data: recentData, error: recentErr }] = await Promise.all([
+      sb.from('app_stars').select('voter_key', { count: 'exact', head: true }),
+      sb
+        .from('app_stars')
+        .select('display_name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(15),
+    ]);
+    if (error) throw error;
+    if (recentErr) throw recentErr;
+
+    let starred = false;
+    if (voterKey) {
+      const { data } = await sb
+        .from('app_stars')
+        .select('voter_key')
+        .eq('voter_key', voterKey)
+        .maybeSingle();
+      starred = Boolean(data);
+    }
+
+    const recentLogs = (
+      (recentData as Array<{ display_name?: string; created_at: string }>) ?? []
+    ).map((r) => ({
+      name: r.display_name?.trim() || 'Thành viên',
+      createdAt: r.created_at,
+    }));
+
+    return { count: count ?? 0, starred, recentLogs };
+  },
+
+  async toggleAppStar(voterKey, displayName) {
+    const sb = getServiceClient();
+    const { data: existing } = await sb
+      .from('app_stars')
+      .select('voter_key')
+      .eq('voter_key', voterKey)
+      .maybeSingle();
+
+    let starred: boolean;
+    if (existing) {
+      const { error } = await sb.from('app_stars').delete().eq('voter_key', voterKey);
+      if (error) throw error;
+      starred = false;
+    } else {
+      const { error } = await sb.from('app_stars').insert({
+        voter_key: voterKey,
+        display_name: displayName || 'Thành viên',
+      });
+      if (error) throw error;
+      starred = true;
+    }
+
+    const [{ count, error: countErr }, { data: recentData }] = await Promise.all([
+      sb.from('app_stars').select('voter_key', { count: 'exact', head: true }),
+      sb
+        .from('app_stars')
+        .select('display_name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(15),
+    ]);
+    if (countErr) throw countErr;
+
+    const recentLogs = (
+      (recentData as Array<{ display_name?: string; created_at: string }>) ?? []
+    ).map((r) => ({
+      name: r.display_name?.trim() || 'Thành viên',
+      createdAt: r.created_at,
+    }));
+
+    return { count: count ?? 0, starred, recentLogs };
+  },
 };

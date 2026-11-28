@@ -42,6 +42,15 @@ create table if not exists live_moment_reactions (
 
 alter table live_moments enable row level security;
 alter table live_moment_reactions enable row level security;
+
+create table if not exists app_stars (
+  voter_key    text primary key,
+  display_name text not null default '',
+  created_at   timestamptz not null default now()
+);
+alter table app_stars
+  add column if not exists display_name text not null default '';
+alter table app_stars enable row level security;
 create index if not exists live_moments_event_created_idx on live_moments (event_id, created_at desc);
 create index if not exists live_moment_reactions_moment_idx on live_moment_reactions (moment_id);
 
