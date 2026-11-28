@@ -10,6 +10,8 @@ import type {
   PublicCheckin,
   PublicMoment,
   ResponseRecord,
+  TimelineEntry,
+  TimelinePage,
 } from './types';
 
 export const LIVE_LEAD_MINUTES = 30;
@@ -187,5 +189,82 @@ export function buildLiveSnapshot(
     checkins: publicCheckins,
     notArrived,
     serverTime: now.toISOString(),
+  };
+}
+
+/** Hợp nhất check-in và ảnh khoảnh khắc thành dòng thời gian phân trang theo con trỏ. */
+export function buildTimelinePage(
+  participants: ParticipantRecord[],
+  checkins: CheckinRecord[],
+  moments: LiveMomentRecord[],
+  opts: {
+    order?: 'asc' | 'desc';
+    cursor?: string | null;
+    limit?: number;
+    participantId?: string | null;
+  } = {}
+): TimelinePage {
+  const order = opts.order === 'asc' ? 'asc' : 'desc';
+  const limit = Math.max(1, Math.min(50, opts.limit ?? 20));
+  const participantById = new Map(
+    participants.filter((p) => p.status === 'approved').map((p) => [p.id, p])
+  );
+
+  const items: TimelineEntry[] = [];
+
+  for (const c of checkins) {
+    const p = participantById.get(c.participantId);
+    if (!p) continue;
+    if (opts.participantId && c.participantId !== opts.participantId) continue;
+    items.push({
+      id: `checkin:${c.participantId}`,
+      kind: 'checkin',
+      timestamp: c.checkedInAt,
+      participantId: c.participantId,
+      name: p.name,
+      note: c.note ?? '',
+    });
+  }
+
+  for (const m of moments) {
+    const p = participantById.get(m.participantId);
+    if (!p) continue;
+    if (opts.participantId && m.participantId !== opts.participantId) continue;
+    items.push({
+      id: `moment:${m.id}`,
+      kind: 'moment',
+      timestamp: m.createdAt,
+      participantId: m.participantId,
+      name: p.name,
+      photoUrl: m.photoUrl,
+      caption: m.caption ?? '',
+    });
+  }
+
+  items.sort((a, b) =>
+    order === 'desc'
+      ? b.timestamp.localeCompare(a.timestamp)
+      : a.timestamp.localeCompare(b.timestamp)
+  );
+
+  const filtered = opts.cursor
+    ? items.filter((item) =>
+        order === 'desc'
+          ? item.timestamp < opts.cursor!
+          : item.timestamp > opts.cursor!
+      )
+    : items;
+
+  const pageItems = filtered.slice(0, limit);
+  const hasMore = filtered.length > limit;
+  const nextCursor =
+    hasMore && pageItems.length > 0
+      ? pageItems[pageItems.length - 1].timestamp
+      : null;
+
+  return {
+    items: pageItems,
+    nextCursor,
+    hasMore,
   };
 }

@@ -87,6 +87,31 @@ export interface PublicCheckin {
   moments: PublicMoment[];
 }
 
+export type TimelineEntry =
+  | {
+      id: string;
+      kind: 'checkin';
+      timestamp: string;
+      participantId: string;
+      name: string;
+      note: string;
+    }
+  | {
+      id: string;
+      kind: 'moment';
+      timestamp: string;
+      participantId: string;
+      name: string;
+      photoUrl: string;
+      caption: string;
+    };
+
+export interface TimelinePage {
+  items: TimelineEntry[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface LiveCounts {
   checkedIn: number;
   expected: number;

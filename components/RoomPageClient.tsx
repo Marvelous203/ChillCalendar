@@ -549,6 +549,7 @@ export function RoomPageClient() {
       {tab === 'live' && isLiveOrDone && (
         <LiveRoomPanel
           snapshot={liveSnapshot}
+          participants={data.participants}
           connectionMode={connectionMode}
           myParticipantId={data.me?.id ?? null}
           isOwner={data.permissions.isOwner}

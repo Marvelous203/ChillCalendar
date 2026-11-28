@@ -5,10 +5,77 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserAvatar } from '@/components/UserAvatar';
 import { compressImageToWebp } from '@/lib/image-compress';
+import { getParticipantToken } from '@/lib/participant-token';
 import type { LiveConnectionMode } from '@/lib/use-live-room';
-import type { LiveSnapshot, PublicCheckin } from '@/lib/types';
+import type {
+  LiveSnapshot,
+  PublicMoment,
+  PublicParticipant,
+  TimelineEntry,
+  TimelinePage,
+} from '@/lib/types';
 
 const MAX_MOMENTS = 5;
+const MERGE_WINDOW_MS = 5 * 60 * 1000;
+const INITIAL_VISIBLE_LIMIT = 20;
+
+const CUTE_THEMES = [
+  {
+    bg: 'bg-emerald-500/15 border-emerald-400/30',
+    text: 'text-emerald-300',
+    emoji: '🥦',
+  },
+  {
+    bg: 'bg-rose-500/15 border-rose-400/30',
+    text: 'text-rose-300',
+    emoji: '🍅',
+  },
+  {
+    bg: 'bg-amber-500/15 border-amber-400/30',
+    text: 'text-amber-300',
+    emoji: '🎃',
+  },
+  {
+    bg: 'bg-purple-500/15 border-purple-400/30',
+    text: 'text-purple-300',
+    emoji: '🍆',
+  },
+  {
+    bg: 'bg-sky-500/15 border-sky-400/30',
+    text: 'text-sky-300',
+    emoji: '🥑',
+  },
+  {
+    bg: 'bg-pink-500/15 border-pink-400/30',
+    text: 'text-pink-300',
+    emoji: '🍓',
+  },
+];
+
+type DisplayView = 'timeline' | 'hourly';
+
+type TimelineBlock =
+  | {
+      id: string;
+      kind: 'checkin';
+      timestamp: string;
+      participantId: string;
+      name: string;
+      note: string;
+    }
+  | {
+      id: string;
+      kind: 'moment_group';
+      timestamp: string;
+      participantId: string;
+      name: string;
+      moments: Array<{
+        id: string;
+        photoUrl: string;
+        caption: string;
+        createdAt: string;
+      }>;
+    };
 
 function formatDuration(ms: number): string {
   const safe = Math.max(0, Math.floor(ms / 1000));
@@ -38,8 +105,108 @@ function formatLocalDateTime(iso: string): string {
   }).format(dt);
 }
 
+function formatHourBucket(iso: string): { key: string; label: string } {
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return { key: '00', label: '00:00' };
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return {
+    key: `${dt.getFullYear()}-${mm}-${dd}-${hh}`,
+    label: `${hh}:00 · ${dd}/${mm}`,
+  };
+}
+
+function snapshotToTimelineEntries(
+  snapshot: LiveSnapshot,
+  filterParticipantId: string | null,
+  order: 'asc' | 'desc'
+): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+  for (const c of snapshot.checkins) {
+    if (filterParticipantId && c.participantId !== filterParticipantId) continue;
+    entries.push({
+      id: `checkin:${c.participantId}`,
+      kind: 'checkin',
+      timestamp: c.checkedInAt,
+      participantId: c.participantId,
+      name: c.name,
+      note: c.note,
+    });
+    for (const m of c.moments) {
+      entries.push({
+        id: `moment:${m.id}`,
+        kind: 'moment',
+        timestamp: m.createdAt,
+        participantId: c.participantId,
+        name: c.name,
+        photoUrl: m.photoUrl,
+        caption: m.caption,
+      });
+    }
+  }
+  entries.sort((a, b) =>
+    order === 'desc'
+      ? b.timestamp.localeCompare(a.timestamp)
+      : a.timestamp.localeCompare(b.timestamp)
+  );
+  return entries;
+}
+
+/** Gộp các ảnh liên tiếp của cùng 1 người trong vòng 5 phút thành 1 block 2x2/carousel. */
+function groupTimelineBlocks(entries: TimelineEntry[]): TimelineBlock[] {
+  const blocks: TimelineBlock[] = [];
+
+  for (const entry of entries) {
+    if (entry.kind === 'checkin') {
+      blocks.push(entry);
+      continue;
+    }
+
+    const prev = blocks[blocks.length - 1];
+    if (
+      prev &&
+      prev.kind === 'moment_group' &&
+      prev.participantId === entry.participantId &&
+      Math.abs(Date.parse(prev.moments[prev.moments.length - 1].createdAt) - Date.parse(entry.timestamp)) <=
+        MERGE_WINDOW_MS
+    ) {
+      prev.moments.push({
+        id: entry.id.replace(/^moment:/, ''),
+        photoUrl: entry.photoUrl,
+        caption: entry.caption,
+        createdAt: entry.timestamp,
+      });
+      continue;
+    }
+
+    blocks.push({
+      id: `group:${entry.id}`,
+      kind: 'moment_group',
+      timestamp: entry.timestamp,
+      participantId: entry.participantId,
+      name: entry.name,
+      moments: [
+        {
+          id: entry.id.replace(/^moment:/, ''),
+          photoUrl: entry.photoUrl,
+          caption: entry.caption,
+          createdAt: entry.timestamp,
+        },
+      ],
+    });
+  }
+
+  return blocks;
+}
+
+function countEntries(snap: LiveSnapshot): number {
+  return snap.checkins.reduce((sum, c) => sum + 1 + c.moments.length, 0);
+}
+
 export function LiveRoomPanel({
   snapshot,
+  participants = [],
   connectionMode,
   myParticipantId,
   isOwner,
@@ -51,6 +218,7 @@ export function LiveRoomPanel({
   onEndLive,
 }: {
   snapshot: LiveSnapshot;
+  participants?: PublicParticipant[];
   connectionMode: LiveConnectionMode;
   myParticipantId: string | null;
   isOwner: boolean;
@@ -64,6 +232,47 @@ export function LiveRoomPanel({
   const isLive = snapshot.status === 'live';
   const isDone = snapshot.status === 'done';
 
+  // Giữ vị trí cuộn khi có mục mới từ WS lúc người dùng đang đọc mục cũ bên dưới
+  const [scrolledDown, setScrolledDown] = useState(false);
+  const [heldSnapshot, setHeldSnapshot] = useState<{
+    baseCount: number;
+    snapshot: LiveSnapshot;
+  } | null>(null);
+  const snapshotRef = useRef(snapshot);
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    function onScroll() {
+      const down = window.scrollY > 260;
+      setScrolledDown((prev) => {
+        if (!prev && down) {
+          setHeldSnapshot({
+            baseCount: countEntries(snapshotRef.current),
+            snapshot: snapshotRef.current,
+          });
+        } else if (prev && !down) {
+          setHeldSnapshot(null);
+        }
+        return down;
+      });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Nếu đang cuộn xuống và chưa có heldSnapshot, snapshot mới sẽ được giữ riêng khi người dùng thao tác cuộn
+  const activeSnapshot = useMemo(() => {
+    if (!scrolledDown || !heldSnapshot) return snapshot;
+    return heldSnapshot.snapshot;
+  }, [scrolledDown, heldSnapshot, snapshot]);
+
+  const pendingNewCount = useMemo(() => {
+    if (!scrolledDown || !heldSnapshot) return 0;
+    return Math.max(0, countEntries(snapshot) - heldSnapshot.baseCount);
+  }, [scrolledDown, heldSnapshot, snapshot]);
+
   const myCheckin = useMemo(
     () => snapshot.checkins.find((c) => c.participantId === myParticipantId) ?? null,
     [snapshot.checkins, myParticipantId]
@@ -72,13 +281,87 @@ export function LiveRoomPanel({
   const myMomentsCount = myCheckin?.moments.length ?? 0;
   const canAddMoreMoments = isLive && canCheckin && myMomentsCount < MAX_MOMENTS;
 
+  // Danh sách thành viên hiển thị trong Grid Table (giữ nguyên bảng, thay icon bằng ảnh khi đã đăng)
+  const roomGridPeople = useMemo(() => {
+    const checkinById = new Map(activeSnapshot.checkins.map((c) => [c.participantId, c]));
+
+    const peopleMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        checkedIn: boolean;
+        photoUrl: string;
+        moments: PublicMoment[];
+      }
+    >();
+
+    for (const p of participants) {
+      if (p.status !== 'approved') continue;
+      const c = checkinById.get(p.id);
+      peopleMap.set(p.id, {
+        id: p.id,
+        name: p.name,
+        checkedIn: Boolean(c),
+        photoUrl: c?.moments[0]?.photoUrl || c?.photoUrl || '',
+        moments: c?.moments ?? [],
+      });
+    }
+    for (const n of activeSnapshot.notArrived) {
+      if (!peopleMap.has(n.participantId)) {
+        peopleMap.set(n.participantId, {
+          id: n.participantId,
+          name: n.name,
+          checkedIn: false,
+          photoUrl: '',
+          moments: [],
+        });
+      }
+    }
+    for (const c of activeSnapshot.checkins) {
+      if (!peopleMap.has(c.participantId)) {
+        peopleMap.set(c.participantId, {
+          id: c.participantId,
+          name: c.name,
+          checkedIn: true,
+          photoUrl: c.moments[0]?.photoUrl || c.photoUrl || '',
+          moments: c.moments,
+        });
+      }
+    }
+
+    const list = Array.from(peopleMap.values());
+    list.sort((a, b) => {
+      if (a.id === myParticipantId) return -1;
+      if (b.id === myParticipantId) return 1;
+      // Người đã đăng ảnh hoặc đã check-in ưu tiên hiển thị trước người đang đợi
+      const aHasPhoto = a.moments.length > 0 || Boolean(a.photoUrl);
+      const bHasPhoto = b.moments.length > 0 || Boolean(b.photoUrl);
+      if (aHasPhoto !== bHasPhoto) return aHasPhoto ? -1 : 1;
+      return 0;
+    });
+    return list;
+  }, [participants, activeSnapshot, myParticipantId]);
+
+  // Chế độ mặc định: Live -> Timeline dọc (mới nhất trên đầu); Done -> Khung giờ (cũ nhất trên đầu)
+  const [viewOverride, setViewOverride] = useState<DisplayView | null>(null);
+  const activeView: DisplayView = viewOverride ?? (isDone ? 'hourly' : 'timeline');
+
+  // Lọc theo người qua dải avatar
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+
+  // Phân trang cursor qua API /timeline khi dữ liệu dài
+  const [visibleLimit, setVisibleLimit] = useState(INITIAL_VISIBLE_LIMIT);
+  const [extraEntries, setExtraEntries] = useState<TimelineEntry[] | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreRemote, setHasMoreRemote] = useState(false);
+  const [remoteCursor, setRemoteCursor] = useState<string | null>(null);
+
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
 
   // Ghi chú ngay lúc check-in
   const [checkinNote, setCheckinNote] = useState('');
-
-  // Modal sửa ghi chú check-in
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
 
@@ -97,14 +380,11 @@ export function LiveRoomPanel({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
 
-  // Gallery Lightbox theo từng người
-  const [lightboxPersonId, setLightboxPersonId] = useState<string | null>(null);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-
-  const lightboxPerson: PublicCheckin | null = useMemo(
-    () => snapshot.checkins.find((c) => c.participantId === lightboxPersonId) ?? null,
-    [snapshot.checkins, lightboxPersonId]
+  // Lightbox xem ảnh lớn & lướt qua các khoảnh khắc
+  const [lightboxItems, setLightboxItems] = useState<Array<PublicMoment & { authorName: string }>>(
+    []
   );
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
     if (!isLive) return;
@@ -133,10 +413,112 @@ export function LiveRoomPanel({
         ? 100
         : 0;
 
+  const order: 'asc' | 'desc' = activeView === 'hourly' ? 'asc' : 'desc';
+
+  const allEntries = useMemo(() => {
+    if (extraEntries) return extraEntries;
+    return snapshotToTimelineEntries(activeSnapshot, selectedPersonId, order);
+  }, [extraEntries, activeSnapshot, selectedPersonId, order]);
+
+  const visibleEntries = useMemo(
+    () => allEntries.slice(0, visibleLimit),
+    [allEntries, visibleLimit]
+  );
+
+  const canShowMoreLocal = allEntries.length > visibleLimit;
+
+  const timelineBlocks = useMemo(
+    () => groupTimelineBlocks(visibleEntries),
+    [visibleEntries]
+  );
+
+  const hourlyBuckets = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        label: string;
+        moments: Array<{
+          id: string;
+          participantId: string;
+          name: string;
+          photoUrl: string;
+          caption: string;
+          createdAt: string;
+        }>;
+        checkins: Array<{ participantId: string; name: string; timestamp: string; note: string }>;
+      }
+    >();
+
+    for (const entry of visibleEntries) {
+      const bucket = formatHourBucket(entry.timestamp);
+      let group = map.get(bucket.key);
+      if (!group) {
+        group = { label: bucket.label, moments: [], checkins: [] };
+        map.set(bucket.key, group);
+      }
+      if (entry.kind === 'moment') {
+        group.moments.push({
+          id: entry.id.replace(/^moment:/, ''),
+          participantId: entry.participantId,
+          name: entry.name,
+          photoUrl: entry.photoUrl,
+          caption: entry.caption,
+          createdAt: entry.timestamp,
+        });
+      } else {
+        group.checkins.push({
+          participantId: entry.participantId,
+          name: entry.name,
+          timestamp: entry.timestamp,
+          note: entry.note,
+        });
+      }
+    }
+    return Array.from(map.entries());
+  }, [visibleEntries]);
+
+  function handleApplyPendingUpdates() {
+    setHeldSnapshot(null);
+    setExtraEntries(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function handleLoadMore() {
+    if (canShowMoreLocal) {
+      setVisibleLimit((prev) => prev + INITIAL_VISIBLE_LIMIT);
+      return;
+    }
+    if (!hasMoreRemote || !remoteCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pt = getParticipantToken(snapshot.code);
+      const headers: Record<string, string> = {};
+      if (pt) headers['x-participant-token'] = pt;
+      const params = new URLSearchParams({
+        order,
+        cursor: remoteCursor,
+        limit: String(INITIAL_VISIBLE_LIMIT),
+      });
+      if (selectedPersonId) params.set('participantId', selectedPersonId);
+      const res = await fetch(`/api/rooms/${snapshot.code}/timeline?${params.toString()}`, {
+        headers,
+      });
+      if (!res.ok) return;
+      const page = (await res.json()) as TimelinePage;
+      setExtraEntries((prev) => [...(prev ?? allEntries), ...page.items]);
+      setHasMoreRemote(page.hasMore);
+      setRemoteCursor(page.nextCursor);
+      setVisibleLimit((prev) => prev + page.items.length);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   async function handleOneTapCheckin(e?: React.FormEvent) {
     e?.preventDefault();
     setSubmitting(true);
     try {
+      setHeldSnapshot(null);
       await onCheckin({ note: checkinNote.trim() });
       confetti({
         particleCount: 55,
@@ -154,6 +536,7 @@ export function LiveRoomPanel({
     e.preventDefault();
     setSubmitting(true);
     try {
+      setHeldSnapshot(null);
       await onCheckin({ note: noteDraft.trim() });
       setEditingNote(false);
     } finally {
@@ -220,6 +603,7 @@ export function LiveRoomPanel({
       }
 
       const hadCheckin = Boolean(myCheckin);
+      setHeldSnapshot(null);
       await onAddMoment({
         photoUrl: uploadJson.url,
         caption: composerCaption.trim(),
@@ -247,16 +631,32 @@ export function LiveRoomPanel({
     }
   }
 
-  function openLightbox(person: PublicCheckin, index = 0) {
-    if (person.moments.length === 0) return;
-    setLightboxPersonId(person.participantId);
-    setLightboxIndex(Math.max(0, Math.min(index, person.moments.length - 1)));
+  function openMomentsLightbox(
+    items: Array<{
+      id: string;
+      participantId: string;
+      authorName: string;
+      photoUrl: string;
+      caption: string;
+      createdAt: string;
+    }>,
+    index = 0
+  ) {
+    if (items.length === 0) return;
+    setLightboxItems(items);
+    setLightboxIndex(Math.max(0, Math.min(index, items.length - 1)));
   }
 
-  const activeMoment =
-    lightboxPerson && lightboxPerson.moments.length > 0
-      ? lightboxPerson.moments[Math.min(lightboxIndex, lightboxPerson.moments.length - 1)]
+  const activeLightboxItem =
+    lightboxItems.length > 0
+      ? lightboxItems[Math.min(lightboxIndex, lightboxItems.length - 1)]
       : null;
+
+  // Khi đang cuộn xuống và snapshot prop có thêm mục mới, giữ bản snapshot cũ cho tới khi user bấm nút nổi
+  const liveItemCount = countEntries(snapshot);
+  const heldItemCount = heldSnapshot ? heldSnapshot.baseCount : liveItemCount;
+  const showFloatingNewBtn =
+    pendingNewCount > 0 || (scrolledDown && liveItemCount > heldItemCount);
 
   return (
     <div className="space-y-4">
@@ -276,6 +676,22 @@ export function LiveRoomPanel({
         onChange={handlePickMomentFile}
         className="hidden"
       />
+
+      {/* Nút nổi báo mục mới khi người dùng đang cuộn xuống đọc mục cũ */}
+      <AnimatePresence>
+        {showFloatingNewBtn && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            onClick={handleApplyPendingUpdates}
+            className="fixed left-1/2 top-20 z-40 -translate-x-1/2 rounded-full bg-[var(--primary)] px-4 py-2 text-xs font-extrabold text-[var(--primary-fg)] shadow-xl shadow-black/30 transition hover:scale-105"
+          >
+            ↑ {Math.max(1, pendingNewCount || liveItemCount - heldItemCount)} mục mới
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Hero Live Card */}
       <motion.section
@@ -300,7 +716,7 @@ export function LiveRoomPanel({
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-solid)] px-3 py-1 text-xs font-bold text-[var(--muted)] ring-1 ring-[var(--border)]">
-                  ✨ Đã kết thúc
+                  ✨ Đã kết thúc · Album kỷ niệm
                 </span>
               )}
 
@@ -375,6 +791,154 @@ export function LiveRoomPanel({
             transition={{ type: 'spring', stiffness: 120, damping: 20 }}
           />
         </div>
+
+        {/* Grid Table thành viên (hiển thị ngay trong phần Đang diễn ra; chưa có ảnh hiện icon chuyển động, có ảnh thay icon bằng ảnh) */}
+        {isLive && roomGridPeople.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+              <span className="font-semibold">
+                Bảng thành viên ({roomGridPeople.length})
+              </span>
+              <span>
+                {roomGridPeople.filter((p) => Boolean(p.photoUrl)).length}/{roomGridPeople.length} đã đăng ảnh
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {roomGridPeople.map((person, idx) => {
+                const isMe = person.id === myParticipantId;
+                const theme = CUTE_THEMES[idx % CUTE_THEMES.length];
+                const hasPhoto = Boolean(person.photoUrl);
+
+                if (hasPhoto) {
+                  const lightboxPayload =
+                    person.moments.length > 0
+                      ? person.moments.map((m) => ({ ...m, authorName: person.name }))
+                      : [
+                          {
+                            id: `checkin-${person.id}`,
+                            participantId: person.id,
+                            photoUrl: person.photoUrl,
+                            caption: '',
+                            createdAt: snapshot.serverTime || new Date().toISOString(),
+                            authorName: person.name,
+                          },
+                        ];
+
+                  return (
+                    <motion.div
+                      key={person.id}
+                      layout
+                      className={`group relative flex aspect-square flex-col justify-between overflow-hidden rounded-2xl border bg-[var(--surface-solid)] ${
+                        isMe
+                          ? 'border-[var(--primary)]/60 ring-2 ring-[var(--primary)]/35'
+                          : 'border-[var(--border)]'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openMomentsLightbox(lightboxPayload, 0)}
+                        className="absolute inset-0 h-full w-full text-left"
+                        aria-label={`Xem ảnh của ${person.name}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={person.photoUrl}
+                          alt={`Khoảnh khắc của ${person.name}`}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/25" />
+                      </button>
+
+                      <div className="relative z-10 flex items-center justify-between gap-1 p-2">
+                        {person.moments.length > 1 ? (
+                          <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums">
+                            📸 {person.moments.length}
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        {isMe && canAddMoreMoments && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openComposer();
+                            }}
+                            className="rounded-full bg-black/65 px-2.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-md transition hover:bg-black/90"
+                          >
+                            + Ảnh
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="pointer-events-none relative z-10 p-2.5 text-white">
+                        <p className="truncate text-xs font-extrabold">
+                          {isMe ? 'Bạn' : person.name}
+                        </p>
+                        {person.moments[0]?.caption && (
+                          <p className="line-clamp-1 text-[10px] text-white/85">
+                            {person.moments[0].caption}
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                }
+
+                return (
+                  <motion.div
+                    key={person.id}
+                    layout
+                    onClick={() => {
+                      if (isMe && canAddMoreMoments) openComposer();
+                    }}
+                    role={isMe && canAddMoreMoments ? 'button' : undefined}
+                    tabIndex={isMe && canAddMoreMoments ? 0 : undefined}
+                    onKeyDown={(e) => {
+                      if (isMe && canAddMoreMoments && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        openComposer();
+                      }
+                    }}
+                    className={`relative flex aspect-square flex-col items-center justify-center gap-1.5 rounded-2xl border p-3.5 text-center backdrop-blur-sm ${theme.bg} ${
+                      isMe && canAddMoreMoments
+                        ? 'cursor-pointer ring-2 ring-[var(--primary)]/50 transition hover:scale-[1.02]'
+                        : ''
+                    }`}
+                  >
+                    <motion.div
+                      animate={{
+                        y: [0, -6, 0],
+                        rotate: [0, -4, 4, 0],
+                      }}
+                      transition={{
+                        duration: 2.4 + (idx % 3) * 0.35,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                        delay: (idx % 4) * 0.2,
+                      }}
+                      className="select-none text-4xl drop-shadow-sm"
+                    >
+                      {theme.emoji}
+                    </motion.div>
+                    <p className={`max-w-full truncate text-xs font-extrabold ${theme.text}`}>
+                      {isMe ? 'Bạn' : person.name}
+                    </p>
+                    <p className="text-[11px] font-medium text-[var(--muted)]">
+                      {isMe
+                        ? 'Chạm để đăng ảnh'
+                        : person.checkedIn
+                          ? 'Đã đến · Đợi ảnh...'
+                          : 'Đang đợi...'}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Khu vực Check-in kèm chữ ngay lập tức / Chụp khoảnh khắc tiếp */}
         {isLive && canCheckin && (
@@ -476,212 +1040,345 @@ export function LiveRoomPanel({
         )}
       </motion.section>
 
-      {/* Lưới mỗi người 1 Grid Card (Web & Mobile) */}
+      {/* Dòng thời gian / Album theo khung giờ */}
       <div className="glass-card space-y-4 p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-display text-base font-bold sm:text-lg">
-              Khoảnh khắc có mặt ({snapshot.checkins.length})
+              {activeView === 'timeline' ? 'Dòng thời gian' : 'Album theo khung giờ'}
             </h2>
             <p className="text-xs text-[var(--muted)]">
-              {isLive && canCheckin
-                ? 'Nhấn vào ô của bạn hoặc bấm Chụp khoảnh khắc để chia sẻ ảnh kèm chữ'
-                : 'Mỗi thành viên là một ô kỷ niệm · Bấm vào ảnh để xem tất cả khoảnh khắc'}
+              {activeView === 'timeline'
+                ? 'Mới nhất ở trên đầu · Gộp ảnh đăng liền nhau'
+                : 'Xếp từ đầu kèo đến cuối kèo theo từng khung giờ'}
             </p>
           </div>
 
-          {canAddMoreMoments && (
-            <button
-              type="button"
-              onClick={openComposer}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-bold text-[var(--primary-fg)] shadow-sm transition hover:opacity-90 active:scale-95"
-            >
-              <span>📸</span>
-              <span>Đăng khoảnh khắc ({myMomentsCount}/{MAX_MOMENTS})</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Chuyển chế độ hiển thị */}
+            <div className="inline-flex rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewOverride('timeline');
+                  setExtraEntries(null);
+                  setVisibleLimit(INITIAL_VISIBLE_LIMIT);
+                }}
+                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${
+                  activeView === 'timeline'
+                    ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Dòng thời gian
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewOverride('hourly');
+                  setExtraEntries(null);
+                  setVisibleLimit(INITIAL_VISIBLE_LIMIT);
+                }}
+                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${
+                  activeView === 'hourly'
+                    ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                Khung giờ
+              </button>
+            </div>
+
+            {canAddMoreMoments && (
+              <button
+                type="button"
+                onClick={openComposer}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-bold text-[var(--primary-fg)] shadow-sm transition hover:opacity-90 active:scale-95"
+              >
+                <span>📸</span>
+                <span>Đăng ảnh ({myMomentsCount}/{MAX_MOMENTS})</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {snapshot.checkins.length === 0 && !(isLive && canCheckin) ? (
-          <div className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted)]">
-            Chưa có ai check-in.
+        {/* Dải avatar lọc theo người */}
+        {activeSnapshot.checkins.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPersonId(null);
+                setExtraEntries(null);
+                setVisibleLimit(INITIAL_VISIBLE_LIMIT);
+              }}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                selectedPersonId === null
+                  ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                  : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--muted)] hover:text-[var(--text)]'
+              }`}
+            >
+              Tất cả ({activeSnapshot.checkins.length})
+            </button>
+
+            {activeSnapshot.checkins.map((person) => {
+              const selected = selectedPersonId === person.participantId;
+              return (
+                <button
+                  key={person.participantId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPersonId(selected ? null : person.participantId);
+                    setExtraEntries(null);
+                    setVisibleLimit(INITIAL_VISIBLE_LIMIT);
+                  }}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs font-semibold transition ${
+                    selected
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                      : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text)] hover:border-[var(--primary)]/50'
+                  }`}
+                >
+                  <UserAvatar name={person.name} size="sm" />
+                  <span>{person.name}</span>
+                  {person.moments.length > 0 && (
+                    <span className="rounded-full bg-[var(--bg)] px-1.5 py-0.5 text-[10px] text-[var(--muted)] tabular-nums">
+                      {person.moments.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-            {/* Ô Grid mời check-in / chụp ảnh nếu bạn chưa check-in */}
-            {isLive && canCheckin && !myCheckin && (
-              <motion.div
-                layout
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="group relative flex aspect-[4/5] flex-col items-center justify-between rounded-2xl border-2 border-dashed border-[var(--primary)]/50 bg-gradient-to-b from-[var(--primary)]/10 to-[var(--surface-solid)] p-3.5 text-center transition hover:border-[var(--primary)]"
-              >
-                <span className="self-start rounded-full bg-[var(--primary)]/20 px-2.5 py-0.5 text-[10px] font-bold text-[var(--primary)]">
-                  Ô của bạn
-                </span>
+        )}
 
-                <button
-                  type="button"
-                  onClick={openComposer}
-                  className="flex flex-1 flex-col items-center justify-center gap-2 px-1"
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--primary)]/20 text-2xl transition group-hover:scale-110">
-                    📸
-                  </span>
-                  <span className="text-xs font-bold text-[var(--text)]">
-                    Chụp / Đăng khoảnh khắc
-                  </span>
-                  <span className="text-[11px] text-[var(--muted)]">
-                    Ảnh + chữ cùng lúc
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void handleOneTapCheckin()}
-                  className="w-full rounded-xl bg-[var(--surface)] py-2 text-[11px] font-bold text-[var(--primary)] ring-1 ring-[var(--border)] transition hover:bg-[var(--primary)] hover:text-[var(--primary-fg)]"
-                >
-                  {submitting ? 'Đang ghi…' : '📍 Điểm danh ngay'}
-                </button>
-              </motion.div>
-            )}
-
+        {visibleEntries.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted)]">
+            {selectedPersonId
+              ? 'Người này chưa có hoạt động nào.'
+              : 'Chưa có ai check-in hoặc đăng ảnh. Hãy là người đầu tiên nhé!'}
+          </div>
+        ) : activeView === 'timeline' ? (
+          /* CÁCH 1: DÒNG THỜI GIAN DỌC */
+          <div className="relative space-y-4 pl-6 before:absolute before:bottom-2 before:left-2.5 before:top-2 before:w-0.5 before:bg-[var(--border)]">
             <AnimatePresence initial={false}>
-              {snapshot.checkins.map((item) => {
-                const isMe = item.participantId === myParticipantId;
-                const latestPhoto = item.moments[0]?.photoUrl || item.photoUrl;
-                const latestText = item.moments[0]?.caption || item.note;
-                const momentCount = item.moments.length;
-                const canTapToUpload = isMe && canAddMoreMoments && !latestPhoto;
+              {timelineBlocks.map((block) => {
+                if (block.kind === 'checkin') {
+                  return (
+                    <motion.div
+                      key={block.id}
+                      layout
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="relative flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--border)]/70 bg-[var(--surface-solid)]/60 px-3.5 py-2.5 text-xs"
+                    >
+                      <span className="absolute -left-[22px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 border-[var(--bg)] bg-emerald-400" />
+                      <UserAvatar name={block.name} size="sm" />
+                      <span className="font-semibold text-[var(--text)]">
+                        {block.name}
+                      </span>
+                      <span className="text-[var(--muted)]">
+                        đã đến · <span className="tabular-nums">{formatLocalTime(block.timestamp)}</span>
+                      </span>
+                      {block.note && (
+                        <span className="rounded-lg bg-[var(--bg)] px-2 py-0.5 text-[var(--text)]/90">
+                          “{block.note}”
+                        </span>
+                      )}
+                    </motion.div>
+                  );
+                }
+
+                // Mục ảnh khoảnh khắc (đã gộp ảnh liền nhau trong 5 phút)
+                const photosCount = block.moments.length;
+                const displayMoments = block.moments.slice(0, 4);
+                const extraCount = Math.max(0, photosCount - 4);
+                const lightboxPayload = block.moments.map((m) => ({
+                  ...m,
+                  participantId: block.participantId,
+                  authorName: block.name,
+                }));
 
                 return (
                   <motion.div
-                    key={item.participantId}
+                    key={block.id}
                     layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className={`group relative flex aspect-[4/5] flex-col justify-between overflow-hidden rounded-2xl border bg-[var(--surface-solid)] transition hover:-translate-y-0.5 ${
-                      isMe
-                        ? 'border-[var(--primary)]/60 ring-2 ring-[var(--primary)]/25'
-                        : 'border-[var(--border)]'
-                    }`}
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative space-y-2.5 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)]/90 p-3.5 sm:p-4"
                   >
-                    {/* Nền ảnh hoặc nền avatar */}
-                    {latestPhoto ? (
+                    <span className="absolute -left-[23px] top-5 h-3 w-3 rounded-full border-2 border-[var(--bg)] bg-[var(--primary)] ring-2 ring-[var(--primary)]/25" />
+
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <UserAvatar name={block.name} size="sm" />
+                        <div>
+                          <p className="text-sm font-bold text-[var(--text)]">
+                            {block.name}
+                          </p>
+                          <p className="text-[11px] text-[var(--muted)] tabular-nums">
+                            {formatLocalTime(block.timestamp)}
+                            {photosCount > 1 ? ` · ${photosCount} khoảnh khắc` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lưới ảnh: 1 ảnh giữ đúng tỷ lệ vừa mắt không cắt, 2-4+ ảnh lưới 2x2 gọn gàng */}
+                    {displayMoments.length === 1 ? (
                       <button
                         type="button"
-                        onClick={() => openLightbox(item, 0)}
-                        className="absolute inset-0 h-full w-full text-left"
-                        aria-label={`Xem khoảnh khắc của ${item.name}`}
+                        onClick={() => openMomentsLightbox(lightboxPayload, 0)}
+                        className="group relative inline-block max-w-full overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 text-left"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={latestPhoto}
-                          alt={`Khoảnh khắc của ${item.name}`}
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          src={displayMoments[0].photoUrl}
+                          alt={displayMoments[0].caption || `Khoảnh khắc của ${block.name}`}
+                          loading="lazy"
+                          decoding="async"
+                          className="max-h-72 w-auto max-w-full object-contain transition duration-300 group-hover:scale-[1.02] sm:max-h-80"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/30" />
                       </button>
                     ) : (
-                      <div
-                        onClick={() => {
-                          if (canTapToUpload) openComposer();
-                        }}
-                        role={canTapToUpload ? 'button' : undefined}
-                        tabIndex={canTapToUpload ? 0 : undefined}
-                        onKeyDown={(e) => {
-                          if (canTapToUpload && (e.key === 'Enter' || e.key === ' ')) {
-                            e.preventDefault();
-                            openComposer();
-                          }
-                        }}
-                        className={`absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center ${
-                          canTapToUpload
-                            ? 'cursor-pointer bg-gradient-to-b from-[var(--primary)]/12 via-[var(--surface-solid)] to-[var(--surface-solid)] hover:from-[var(--primary)]/20'
-                            : 'bg-gradient-to-b from-[var(--surface)] to-[var(--surface-solid)]'
-                        }`}
-                      >
-                        <UserAvatar name={item.name} size="md" />
-                        {canTapToUpload ? (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--primary)]/60 bg-[var(--primary)]/10 px-2.5 py-1 text-[11px] font-semibold text-[var(--primary)]">
-                            📸 Chụp khoảnh khắc
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-medium text-[var(--muted)]">
-                            ✓ Đã có mặt
-                          </span>
-                        )}
+                      <div className="grid max-w-md grid-cols-2 gap-1.5 overflow-hidden rounded-xl">
+                        {displayMoments.map((m, idx) => {
+                          const isLastOverflow = idx === 3 && extraCount > 0;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => openMomentsLightbox(lightboxPayload, idx)}
+                              className={`group relative overflow-hidden rounded-xl bg-black/20 text-left ${
+                                displayMoments.length === 3 && idx === 0
+                                  ? 'col-span-2 aspect-[16/9]'
+                                  : 'aspect-square'
+                              }`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={m.photoUrl}
+                                alt={m.caption || `Khoảnh khắc của ${block.name}`}
+                                loading="lazy"
+                                decoding="async"
+                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                              />
+                              {isLastOverflow && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-lg font-extrabold text-white">
+                                  +{extraCount}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
 
-                    {/* Header trên card */}
-                    <div className="relative z-10 flex items-center justify-between gap-1.5 p-2.5">
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold backdrop-blur-md ${
-                            isMe
-                              ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
-                              : 'bg-black/45 text-white/90'
-                          }`}
-                        >
-                          {isMe ? 'Bạn' : formatLocalTime(item.checkedInAt)}
-                        </span>
-                        {momentCount > 1 && (
-                          <span className="rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums">
-                            📸 {momentCount}
-                          </span>
-                        )}
-                      </div>
-
-                      {isMe && canAddMoreMoments && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openComposer();
-                          }}
-                          className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-md transition hover:bg-black/85"
-                        >
-                          {momentCount > 0 ? '+ Ảnh' : '📸 Ảnh'}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Footer thông tin người & ghi chú */}
-                    <div
-                      className={`relative z-10 space-y-1 p-3 ${
-                        latestPhoto ? 'text-white' : 'text-[var(--text)]'
-                      } pointer-events-none`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {latestPhoto && <UserAvatar name={item.name} size="sm" />}
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-bold sm:text-sm">
-                            {item.name}
-                          </p>
-                          {latestPhoto && (
-                            <p className="text-[10px] text-white/75 tabular-nums">
-                              {formatLocalTime(item.moments[0]?.createdAt ?? item.checkedInAt)}
+                    {/* Caption riêng cho từng ảnh */}
+                    {block.moments.some((m) => m.caption) && (
+                      <div className="space-y-1 pt-0.5">
+                        {block.moments
+                          .filter((m) => m.caption)
+                          .map((m) => (
+                            <p
+                              key={m.id}
+                              className="break-words text-sm leading-relaxed text-[var(--text)]/95"
+                            >
+                              {block.moments.length > 1 && (
+                                <span className="mr-1.5 text-[11px] font-semibold text-[var(--muted)] tabular-nums">
+                                  [{formatLocalTime(m.createdAt)}]
+                                </span>
+                              )}
+                              {m.caption}
                             </p>
-                          )}
-                        </div>
+                          ))}
                       </div>
-                      {latestText && (
-                        <p
-                          className={`line-clamp-2 break-words text-[11px] leading-snug ${
-                            latestPhoto ? 'text-white/90' : 'text-[var(--muted)]'
-                          }`}
-                        >
-                          “{latestText}”
-                        </p>
-                      )}
-                    </div>
+                    )}
                   </motion.div>
                 );
               })}
             </AnimatePresence>
+          </div>
+        ) : (
+          /* CÁCH 2: GOM THEO KHUNG GIỜ (ALBUM SAU KÈO) */
+          <div className="space-y-6">
+            {hourlyBuckets.map(([bucketKey, group]) => (
+              <section key={bucketKey} className="space-y-3">
+                <div className="sticky top-14 z-10 flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 backdrop-blur-md">
+                  <span className="font-display text-sm font-bold text-[var(--primary)] tabular-nums">
+                    🕒 {group.label}
+                  </span>
+                  <span className="text-[11px] text-[var(--muted)] tabular-nums">
+                    {group.moments.length} ảnh · {group.checkins.length} check-in
+                  </span>
+                </div>
+
+                {group.checkins.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.checkins.map((c) => (
+                      <span
+                        key={`${c.participantId}-${c.timestamp}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-2.5 py-1 text-[11px] text-[var(--muted)]"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        <strong className="text-[var(--text)]">{c.name}</strong> đến lúc{' '}
+                        {formatLocalTime(c.timestamp)}
+                        {c.note ? ` — “${c.note}”` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {group.moments.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+                    {group.moments.map((m, idx) => {
+                      const lightboxPayload = group.moments.map((item) => ({
+                        ...item,
+                        authorName: item.name,
+                      }));
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => openMomentsLightbox(lightboxPayload, idx)}
+                          className="group relative flex aspect-square flex-col justify-end overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] text-left"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={m.photoUrl}
+                            alt={m.caption || `Ảnh của ${m.name}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+                          <div className="relative z-10 space-y-0.5 p-2.5 text-white">
+                            <p className="truncate text-xs font-bold">{m.name}</p>
+                            {m.caption && (
+                              <p className="line-clamp-2 text-[11px] text-white/85">
+                                {m.caption}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+
+        {(canShowMoreLocal || hasMoreRemote) && (
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={() => void handleLoadMore()}
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] px-4 py-2 text-xs font-bold text-[var(--text)] transition hover:border-[var(--primary)] disabled:opacity-50"
+            >
+              {loadingMore ? 'Đang tải thêm…' : 'Xem thêm mục cũ hơn'}
+            </button>
           </div>
         )}
       </div>
@@ -857,7 +1554,7 @@ export function LiveRoomPanel({
             >
               <h3 className="font-display text-lg font-bold">Kết thúc sự kiện?</h3>
               <p className="text-sm text-[var(--muted)]">
-                Hệ thống sẽ khóa check-in và đăng ảnh mới. Toàn bộ danh sách người đã đến, ghi chú và ảnh khoảnh khắc vẫn được giữ nguyên.
+                Hệ thống sẽ khóa check-in và đăng ảnh mới. Toàn bộ dòng thời gian sẽ chuyển sang Album theo khung giờ.
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -890,15 +1587,15 @@ export function LiveRoomPanel({
         )}
       </AnimatePresence>
 
-      {/* Lightbox Carousel xem toàn bộ khoảnh khắc của 1 người */}
+      {/* Lightbox Carousel xem ảnh lớn */}
       <AnimatePresence>
-        {lightboxPerson && activeMoment && (
+        {activeLightboxItem && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
-            onClick={() => setLightboxPersonId(null)}
+            onClick={() => setLightboxItems([])}
           >
             <div
               className="flex w-full max-w-2xl flex-col gap-3"
@@ -906,25 +1603,26 @@ export function LiveRoomPanel({
             >
               <div className="flex items-center justify-between text-white">
                 <div className="flex items-center gap-2.5">
-                  <UserAvatar name={lightboxPerson.name} size="sm" />
+                  <UserAvatar name={activeLightboxItem.authorName} size="sm" />
                   <div>
-                    <p className="text-sm font-bold">{lightboxPerson.name}</p>
+                    <p className="text-sm font-bold">{activeLightboxItem.authorName}</p>
                     <p className="text-[11px] text-white/70 tabular-nums">
-                      {formatLocalTime(activeMoment.createdAt)} · Ảnh {lightboxIndex + 1}/{lightboxPerson.moments.length}
+                      {formatLocalTime(activeLightboxItem.createdAt)} · Ảnh {lightboxIndex + 1}/{lightboxItems.length}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {(isOwner || lightboxPerson.participantId === myParticipantId) &&
-                    !activeMoment.id.startsWith('checkin-') && (
+                  {(isOwner || activeLightboxItem.participantId === myParticipantId) &&
+                    !activeLightboxItem.id.startsWith('checkin-') && (
                       <button
                         type="button"
                         onClick={async () => {
-                          await onDeleteMoment(activeMoment.id);
-                          if (lightboxPerson.moments.length <= 1) {
-                            setLightboxPersonId(null);
-                          } else {
-                            setLightboxIndex((i) => Math.max(0, i - 1));
+                          const removedId = activeLightboxItem.id;
+                          await onDeleteMoment(removedId);
+                          const next = lightboxItems.filter((x) => x.id !== removedId);
+                          setLightboxItems(next);
+                          if (next.length > 0) {
+                            setLightboxIndex((i) => Math.min(i, next.length - 1));
                           }
                         }}
                         className="rounded-full bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/35"
@@ -934,7 +1632,7 @@ export function LiveRoomPanel({
                     )}
                   <button
                     type="button"
-                    onClick={() => setLightboxPersonId(null)}
+                    onClick={() => setLightboxItems([])}
                     className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white"
                   >
                     ✕
@@ -945,18 +1643,18 @@ export function LiveRoomPanel({
               <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={activeMoment.photoUrl}
-                  alt={`Khoảnh khắc của ${lightboxPerson.name}`}
+                  src={activeLightboxItem.photoUrl}
+                  alt={activeLightboxItem.caption || `Khoảnh khắc của ${activeLightboxItem.authorName}`}
                   className="max-h-[68vh] w-full object-contain"
                 />
 
-                {lightboxPerson.moments.length > 1 && (
+                {lightboxItems.length > 1 && (
                   <>
                     <button
                       type="button"
                       onClick={() =>
                         setLightboxIndex((i) =>
-                          i === 0 ? lightboxPerson.moments.length - 1 : i - 1
+                          i === 0 ? lightboxItems.length - 1 : i - 1
                         )
                       }
                       className="absolute left-2 rounded-full bg-black/60 px-3 py-2 text-sm font-bold text-white backdrop-blur-md hover:bg-black/80"
@@ -966,9 +1664,7 @@ export function LiveRoomPanel({
                     <button
                       type="button"
                       onClick={() =>
-                        setLightboxIndex((i) =>
-                          (i + 1) % lightboxPerson.moments.length
-                        )
+                        setLightboxIndex((i) => (i + 1) % lightboxItems.length)
                       }
                       className="absolute right-2 rounded-full bg-black/60 px-3 py-2 text-sm font-bold text-white backdrop-blur-md hover:bg-black/80"
                     >
@@ -978,15 +1674,15 @@ export function LiveRoomPanel({
                 )}
               </div>
 
-              {activeMoment.caption && (
+              {activeLightboxItem.caption && (
                 <p className="rounded-xl bg-white/10 px-4 py-2.5 text-center text-sm text-white">
-                  “{activeMoment.caption}”
+                  “{activeLightboxItem.caption}”
                 </p>
               )}
 
-              {lightboxPerson.moments.length > 1 && (
+              {lightboxItems.length > 1 && (
                 <div className="flex justify-center gap-2 overflow-x-auto py-1">
-                  {lightboxPerson.moments.map((m, idx) => (
+                  {lightboxItems.map((m, idx) => (
                     <button
                       key={m.id}
                       type="button"
