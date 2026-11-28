@@ -7,6 +7,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import useSWR from 'swr';
 import { AvailabilityGrid } from '@/components/AvailabilityGrid';
 import { FinalBanner } from '@/components/FinalBanner';
+import { LiveRoomPanel } from '@/components/LiveRoomPanel';
 import { ManageSheet } from '@/components/ManageSheet';
 import { NameSheet } from '@/components/NameSheet';
 import { PlacesPanel } from '@/components/PlacesPanel';
@@ -23,15 +24,18 @@ import {
   setParticipantToken,
 } from '@/lib/participant-token';
 import { normalizeCode } from '@/lib/room-code';
+import { useLiveRoom } from '@/lib/use-live-room';
 import type {
   FinalizePolicy,
   ItineraryStop,
+  LiveSnapshot,
   PlaceType,
+  ReactionEmoji,
   RoomBundle,
   Visibility,
 } from '@/lib/types';
 
-type RoomTab = 'grid' | 'results' | 'places';
+type RoomTab = 'live' | 'grid' | 'results' | 'places';
 
 interface PrivateError {
   private?: boolean;
@@ -85,16 +89,60 @@ export function RoomPageClient() {
       if (!res.ok) {
         throw new RoomFetchError(res.status, json);
       }
+      if (json.autoParticipantToken) {
+        setParticipantToken(code, json.autoParticipantToken);
+      }
       return json;
     },
     { refreshInterval: 8000, keepPreviousData: true }
   );
 
-  const [tab, setTab] = useState<RoomTab>('grid');
+  const [tabOverride, setTabOverride] = useState<RoomTab | null>(null);
   const [draftSlots, setDraftSlots] = useState<string[] | null>(null);
   const [savingSlots, setSavingSlots] = useState(false);
   const [joining, setJoining] = useState(false);
   const [showManage, setShowManage] = useState(false);
+
+  const fallbackLive: LiveSnapshot = useMemo(
+    () => ({
+      code,
+      status: 'voting',
+      liveFrom: null,
+      autoEndAt: null,
+      endedAt: null,
+      endedBy: null,
+      counts: { checkedIn: 0, expected: 0 },
+      checkins: [],
+      notArrived: [],
+      serverTime: '',
+    }),
+    [code]
+  );
+
+  const {
+    snapshot: liveSnapshot,
+    setSnapshot: setLiveSnapshot,
+    connectionMode,
+    sendReactionBurst,
+  } = useLiveRoom({
+    code,
+    status: data?.event.status ?? 'voting',
+    initialSnapshot: data?.live ?? fallbackLive,
+    onStatusChange: () => {
+      void mutate();
+    },
+    onReactionBurst: (momentId, emoji, count) => {
+      window.dispatchEvent(
+        new CustomEvent('cwm-reaction-burst', {
+          detail: { momentId, emoji, count },
+        })
+      );
+    },
+  });
+
+  const isLiveOrDone = liveSnapshot.status === 'live' || liveSnapshot.status === 'done';
+  const tab: RoomTab = tabOverride ?? (isLiveOrDone ? 'live' : 'grid');
+  const setTab = (next: RoomTab) => setTabOverride(next);
 
   const serverSlots = useMemo(() => {
     if (!data?.me) return [];
@@ -305,6 +353,134 @@ export function RoomPageClient() {
     toast('Đã bỏ chốt lịch', 'info');
   }
 
+  async function handleStartEarly() {
+    const res = await fetch(`/api/rooms/${code}/start-early`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const json = (await res.json()) as RoomBundle & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể bắt đầu sớm', 'error');
+      return;
+    }
+    await mutate(json, { revalidate: false });
+    setTabOverride('live');
+    toast('Đã bật chế độ Đang diễn ra!', 'success');
+  }
+
+  async function handleCheckin(payload: { note?: string; photoUrl?: string }) {
+    const res = await fetch(`/api/rooms/${code}/checkin`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể check-in', 'error');
+      return;
+    }
+    setLiveSnapshot(json);
+    if (payload.note !== undefined || payload.photoUrl !== undefined) {
+      toast('Đã cập nhật check-in!', 'success');
+    } else {
+      toast('Đã ghi nhận bạn đã đến!', 'success');
+    }
+  }
+
+  async function handleAddMoment(payload: { photoUrl: string; caption: string; sticker?: string }) {
+    const res = await fetch(`/api/rooms/${code}/moments`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể đăng khoảnh khắc', 'error');
+      throw new Error(json.error ?? 'Không thể đăng khoảnh khắc');
+    }
+    setLiveSnapshot(json);
+    toast('Đã đăng khoảnh khắc mới!', 'success');
+  }
+
+  async function handleReactMoment(
+    momentId: string,
+    emoji: ReactionEmoji,
+    mode: 'toggle' | 'set'
+  ) {
+    const res = await fetch(`/api/rooms/${code}/moments/react`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ momentId, emoji, mode }),
+    });
+    if (!res.ok) return;
+    const json = (await res.json()) as {
+      momentId: string;
+      reactions: Partial<Record<ReactionEmoji, number>>;
+      myReactions: ReactionEmoji[];
+      totalReactions: number;
+    };
+    setLiveSnapshot({
+      ...liveSnapshot,
+      checkins: liveSnapshot.checkins.map((c) => ({
+        ...c,
+        moments: c.moments.map((m) =>
+          m.id === json.momentId
+            ? {
+                ...m,
+                reactions: json.reactions,
+                myReactions: json.myReactions,
+                totalReactions: json.totalReactions,
+              }
+            : m
+        ),
+      })),
+      serverTime: new Date().toISOString(),
+    });
+  }
+
+  async function handlePinMoment(momentId: string, pinned: boolean) {
+    const res = await fetch(`/api/rooms/${code}/moments/pin`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ momentId, pinned }),
+    });
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể ghim khoảnh khắc', 'error');
+      return;
+    }
+    setLiveSnapshot(json);
+    toast(pinned ? 'Đã ghim khoảnh khắc lên đầu!' : 'Đã bỏ ghim khoảnh khắc', 'info');
+  }
+
+  async function handleDeleteMoment(momentId: string) {
+    const res = await fetch(
+      `/api/rooms/${code}/moments?momentId=${encodeURIComponent(momentId)}`,
+      { method: 'DELETE', headers: authHeaders() }
+    );
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể xóa ảnh', 'error');
+      return;
+    }
+    setLiveSnapshot(json);
+    toast('Đã xóa ảnh khoảnh khắc', 'info');
+  }
+
+  async function handleEndLive() {
+    const res = await fetch(`/api/rooms/${code}/end`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const json = (await res.json()) as RoomBundle & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể kết thúc sự kiện', 'error');
+      return;
+    }
+    await mutate(json, { revalidate: false });
+    toast('Sự kiện đã kết thúc. Dữ liệu kỷ niệm đã được lưu!', 'info');
+  }
+
   if (error?.status === 403 && error.payload.private) {
     return (
       <PrivateRoomGate
@@ -402,8 +578,12 @@ export function RoomPageClient() {
             finalTo={data.event.finalTo}
             finalPlace={finalPlace}
             finalizedBy={data.event.finalizedBy}
+            status={liveSnapshot.status}
+            liveFrom={liveSnapshot.liveFrom}
             canUnfinalize={data.permissions.canFinalize}
+            canStartEarly={data.permissions.canStartEarly}
             onUnfinalize={handleUnfinalize}
+            onStartEarly={handleStartEarly}
           />
         )}
 
@@ -411,6 +591,15 @@ export function RoomPageClient() {
         value={tab}
         onChange={setTab}
         items={[
+          ...(isLiveOrDone
+            ? [
+                {
+                  id: 'live' as const,
+                  label: liveSnapshot.status === 'live' ? '● Đang diễn ra' : '✨ Đã kết thúc',
+                  badge: `${liveSnapshot.counts.checkedIn}/${liveSnapshot.counts.expected}`,
+                },
+              ]
+            : []),
           { id: 'grid', label: 'Giờ rảnh' },
           {
             id: 'results',
@@ -420,6 +609,25 @@ export function RoomPageClient() {
           { id: 'places', label: 'Địa điểm', badge: data.places.length },
         ]}
       />
+
+      {tab === 'live' && isLiveOrDone && (
+        <LiveRoomPanel
+          snapshot={liveSnapshot}
+          participants={data.participants}
+          connectionMode={connectionMode}
+          myParticipantId={data.me?.id ?? null}
+          isOwner={data.permissions.isOwner}
+          canCheckin={data.permissions.canCheckin}
+          canEndLive={data.permissions.canEndLive}
+          onCheckin={handleCheckin}
+          onAddMoment={handleAddMoment}
+          onReactMoment={handleReactMoment}
+          onPinMoment={handlePinMoment}
+          onSendBurst={sendReactionBurst}
+          onDeleteMoment={handleDeleteMoment}
+          onEndLive={handleEndLive}
+        />
+      )}
 
       {tab === 'grid' && (
         <AvailabilityGrid

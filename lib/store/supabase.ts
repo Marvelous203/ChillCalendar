@@ -1,11 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import type {
+  CheckinRecord,
+  EndedBy,
   EventRecord,
   ItineraryStop,
+  LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   PlaceType,
+  ReactionEmoji,
   ResponseRecord,
 } from '../types';
 import type {
@@ -44,6 +49,9 @@ interface EventRow {
   final_place: string | null;
   finalized_by: string | null;
   finalized_at: string | null;
+  live_from?: string | null;
+  ended_at?: string | null;
+  ended_by?: EndedBy | null;
   created_at: string;
 }
 
@@ -66,6 +74,9 @@ function mapEvent(row: EventRow): EventRecord {
     finalPlaceId: row.final_place,
     finalizedBy: row.finalized_by,
     finalizedAt: row.finalized_at,
+    liveFrom: row.live_from ?? null,
+    endedAt: row.ended_at ?? null,
+    endedBy: row.ended_by ?? null,
     createdAt: row.created_at,
   };
 }
@@ -218,6 +229,7 @@ export const supabaseStore: StoreAdapter = {
         final_place: input.finalPlaceId,
         finalized_by: input.finalizedBy,
         finalized_at: input.finalizedAt,
+        live_from: input.liveFrom,
       })
       .eq('id', eventId)
       .select('*')
@@ -558,5 +570,319 @@ export const supabaseStore: StoreAdapter = {
         .eq('participant_id', participantId);
       if (error) throw error;
     }
+  },
+
+  async listCheckins(eventId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('checkins')
+      .select('*')
+      .eq('event_id', eventId)
+      .order('checked_in_at', { ascending: false });
+    if (error) throw error;
+    return (
+      data as Array<{
+        event_id: string;
+        participant_id: string;
+        checked_in_at: string;
+        left_at: string | null;
+        note: string;
+        photo_url?: string;
+      }>
+    ).map(
+      (c): CheckinRecord => ({
+        eventId: c.event_id,
+        participantId: c.participant_id,
+        checkedInAt: c.checked_in_at,
+        leftAt: c.left_at ?? null,
+        note: c.note ?? '',
+        photoUrl: c.photo_url ?? '',
+      })
+    );
+  },
+
+  async upsertCheckin({ eventId, participantId, note, photoUrl }) {
+    const sb = getServiceClient();
+    const { data: existing } = await sb
+      .from('checkins')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('participant_id', participantId)
+      .maybeSingle();
+
+    if (existing) {
+      const patch: Record<string, string> = {};
+      if (note !== undefined) patch.note = note;
+      if (photoUrl !== undefined) patch.photo_url = photoUrl;
+      if (Object.keys(patch).length > 0) {
+        const { data: updated, error: updErr } = await sb
+          .from('checkins')
+          .update(patch)
+          .eq('event_id', eventId)
+          .eq('participant_id', participantId)
+          .select('*')
+          .single();
+        if (updErr) throw updErr;
+        const c = updated as {
+          event_id: string;
+          participant_id: string;
+          checked_in_at: string;
+          left_at: string | null;
+          note: string;
+          photo_url?: string;
+        };
+        return {
+          eventId: c.event_id,
+          participantId: c.participant_id,
+          checkedInAt: c.checked_in_at,
+          leftAt: c.left_at ?? null,
+          note: c.note ?? '',
+          photoUrl: c.photo_url ?? '',
+        };
+      }
+      const c = existing as {
+        event_id: string;
+        participant_id: string;
+        checked_in_at: string;
+        left_at: string | null;
+        note: string;
+        photo_url?: string;
+      };
+      return {
+        eventId: c.event_id,
+        participantId: c.participant_id,
+        checkedInAt: c.checked_in_at,
+        leftAt: c.left_at ?? null,
+        note: c.note ?? '',
+        photoUrl: c.photo_url ?? '',
+      };
+    }
+
+    const { data, error } = await sb
+      .from('checkins')
+      .insert({
+        event_id: eventId,
+        participant_id: participantId,
+        checked_in_at: new Date().toISOString(),
+        note: note ?? '',
+        photo_url: photoUrl ?? '',
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+    const c = data as {
+      event_id: string;
+      participant_id: string;
+      checked_in_at: string;
+      left_at: string | null;
+      note: string;
+      photo_url?: string;
+    };
+    return {
+      eventId: c.event_id,
+      participantId: c.participant_id,
+      checkedInAt: c.checked_in_at,
+      leftAt: c.left_at ?? null,
+      note: c.note ?? '',
+      photoUrl: c.photo_url ?? '',
+    };
+  },
+
+  async setLiveStartEarly(eventId, liveFromIso) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('events')
+      .update({ live_from: liveFromIso })
+      .eq('id', eventId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    return data ? mapEvent(data as EventRow) : null;
+  },
+
+  async endEvent(eventId, endedAtIso, endedBy) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('events')
+      .update({ ended_at: endedAtIso, ended_by: endedBy })
+      .eq('id', eventId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    return data ? mapEvent(data as EventRow) : null;
+  },
+
+  async listActiveLiveEvents() {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('events')
+      .select('*')
+      .not('live_from', 'is', null)
+      .is('ended_at', null);
+    if (error) throw error;
+    return (data as EventRow[]).map(mapEvent);
+  },
+
+  async listMoments(eventId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .select('*')
+      .eq('event_id', eventId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (
+      data as Array<{
+        id: string;
+        event_id: string;
+        participant_id: string;
+        photo_url: string;
+        caption: string;
+        sticker?: string;
+        pinned?: boolean;
+        created_at: string;
+      }>
+    ).map(
+      (m): LiveMomentRecord => ({
+        id: m.id,
+        eventId: m.event_id,
+        participantId: m.participant_id,
+        photoUrl: m.photo_url,
+        caption: m.caption ?? '',
+        sticker: m.sticker ?? '',
+        pinned: Boolean(m.pinned),
+        createdAt: m.created_at,
+      })
+    );
+  },
+
+  async createMoment(input) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .insert({
+        event_id: input.eventId,
+        participant_id: input.participantId,
+        photo_url: input.photoUrl,
+        caption: input.caption ?? '',
+        sticker: input.sticker ?? '',
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+    const m = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      photo_url: string;
+      caption: string;
+      sticker?: string;
+      pinned?: boolean;
+      created_at: string;
+    };
+    return {
+      id: m.id,
+      eventId: m.event_id,
+      participantId: m.participant_id,
+      photoUrl: m.photo_url,
+      caption: m.caption ?? '',
+      sticker: m.sticker ?? '',
+      pinned: Boolean(m.pinned),
+      createdAt: m.created_at,
+    };
+  },
+
+  async setMomentPinned(eventId, momentId, pinned) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .update({ pinned })
+      .eq('event_id', eventId)
+      .eq('id', momentId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const m = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      photo_url: string;
+      caption: string;
+      sticker?: string;
+      pinned?: boolean;
+      created_at: string;
+    };
+    return {
+      id: m.id,
+      eventId: m.event_id,
+      participantId: m.participant_id,
+      photoUrl: m.photo_url,
+      caption: m.caption ?? '',
+      sticker: m.sticker ?? '',
+      pinned: Boolean(m.pinned),
+      createdAt: m.created_at,
+    };
+  },
+
+  async deleteMoment(eventId, momentId) {
+    const sb = getServiceClient();
+    const { error } = await sb
+      .from('live_moments')
+      .delete()
+      .eq('event_id', eventId)
+      .eq('id', momentId);
+    if (error) throw error;
+  },
+
+  async listMomentReactions(eventId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moment_reactions')
+      .select('moment_id, participant_id, emoji, live_moments!inner(event_id)')
+      .eq('live_moments.event_id', eventId);
+    if (error) throw error;
+    return (
+      data as Array<{ moment_id: string; participant_id: string; emoji: ReactionEmoji }>
+    ).map(
+      (r): MomentReactionRecord => ({
+        momentId: r.moment_id,
+        participantId: r.participant_id,
+        emoji: r.emoji,
+      })
+    );
+  },
+
+  async setMomentReaction(momentId, participantId, emoji, mode) {
+    const sb = getServiceClient();
+    const { data: existing } = await sb
+      .from('live_moment_reactions')
+      .select('moment_id')
+      .eq('moment_id', momentId)
+      .eq('participant_id', participantId)
+      .eq('emoji', emoji)
+      .maybeSingle();
+
+    if (existing) {
+      if (mode === 'toggle') {
+        const { error } = await sb
+          .from('live_moment_reactions')
+          .delete()
+          .eq('moment_id', momentId)
+          .eq('participant_id', participantId)
+          .eq('emoji', emoji);
+        if (error) throw error;
+        return { active: false };
+      }
+      return { active: true };
+    }
+
+    const { error } = await sb.from('live_moment_reactions').insert({
+      moment_id: momentId,
+      participant_id: participantId,
+      emoji,
+    });
+    if (error) throw error;
+    return { active: true };
   },
 };

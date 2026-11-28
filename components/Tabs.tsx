@@ -18,7 +18,10 @@ export function Tabs<T extends string>({
   onChange: (next: T) => void;
 }) {
   return (
-    <div className="grid grid-cols-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1 backdrop-blur-xl">
+    <div
+      className="grid rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1 backdrop-blur-xl"
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
       {items.map((item) => {
         const active = item.id === value;
         return (

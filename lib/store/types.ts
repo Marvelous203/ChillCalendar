@@ -1,11 +1,16 @@
 import type {
+  CheckinRecord,
+  EndedBy,
   EventRecord,
   FinalizePolicy,
   ItineraryStop,
+  LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   PlaceType,
+  ReactionEmoji,
   ResponseRecord,
   Visibility,
   VoteRecord,
@@ -38,6 +43,7 @@ export interface FinalizeInput {
   finalPlaceId: string | null;
   finalizedBy: string | null;
   finalizedAt: string | null;
+  liveFrom: string | null;
 }
 
 export interface StoreAdapter {
@@ -102,4 +108,34 @@ export interface StoreAdapter {
 
   listVotesByEvent(eventId: string): Promise<VoteRecord[]>;
   setVote(placeId: string, participantId: string, on: boolean): Promise<void>;
+
+  listCheckins(eventId: string): Promise<CheckinRecord[]>;
+  upsertCheckin(input: {
+    eventId: string;
+    participantId: string;
+    note?: string;
+    photoUrl?: string;
+  }): Promise<CheckinRecord>;
+  setLiveStartEarly(eventId: string, liveFromIso: string): Promise<EventRecord | null>;
+  endEvent(eventId: string, endedAtIso: string, endedBy: EndedBy): Promise<EventRecord | null>;
+  listActiveLiveEvents(): Promise<EventRecord[]>;
+
+  listMoments(eventId: string): Promise<LiveMomentRecord[]>;
+  createMoment(input: {
+    eventId: string;
+    participantId: string;
+    photoUrl: string;
+    caption: string;
+    sticker?: string;
+  }): Promise<LiveMomentRecord>;
+  setMomentPinned(eventId: string, momentId: string, pinned: boolean): Promise<LiveMomentRecord | null>;
+  deleteMoment(eventId: string, momentId: string): Promise<void>;
+
+  listMomentReactions(eventId: string): Promise<MomentReactionRecord[]>;
+  setMomentReaction(
+    momentId: string,
+    participantId: string,
+    emoji: ReactionEmoji,
+    mode: 'toggle' | 'set'
+  ): Promise<{ active: boolean }>;
 }
