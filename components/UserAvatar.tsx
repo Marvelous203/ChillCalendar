@@ -28,13 +28,20 @@ export function UserAvatar({
   name,
   size = 'md',
   muted = false,
+  className = '',
 }: {
   name: string;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md';
   muted?: boolean;
+  className?: string;
 }) {
   const [bg, fg] = PASTEL_PALETTE[hashName(name) % PASTEL_PALETTE.length];
-  const sizeClass = size === 'sm' ? 'h-7 w-7 text-[11px]' : 'h-8 w-8 text-xs';
+  const sizeClass =
+    size === 'xs'
+      ? 'h-5 w-5 text-[9px]'
+      : size === 'sm'
+        ? 'h-7 w-7 text-[11px]'
+        : 'h-8 w-8 text-xs';
 
   return (
     <span
@@ -42,7 +49,7 @@ export function UserAvatar({
       style={{ backgroundColor: bg, color: fg }}
       className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold select-none ${sizeClass} ${
         muted ? 'opacity-45 grayscale' : ''
-      }`}
+      } ${className}`}
     >
       {getInitials(name)}
     </span>

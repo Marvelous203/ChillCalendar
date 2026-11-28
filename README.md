@@ -1,9 +1,13 @@
-# Hẹn Giờ Rảnh (`chillwithme`) · `v2.2.0`
+# Hẹn Giờ Rảnh (`chillwithme`) · `v2.3.0`
 
 Ứng dụng web giúp bạn bè hẹn lịch đi chơi, chọn giờ rảnh, đề xuất địa điểm / lộ trình nhiều chặng, chốt kèo và ghi lại khoảnh khắc **Đang diễn ra (Live)** theo thời gian thực — tối ưu cho điện thoại (Zalo/Messenger WebView), múi giờ chuẩn Việt Nam `Asia/Ho_Chi_Minh` (`UTC+7`).
 
 ## Lịch sử phiên bản (Changelog)
 
+- **`v2.3.0` (28/11/2026):**
+  - **Bảo mật phiên đăng nhập (`AES-256-GCM` + `HttpOnly`):** chuyển đăng nhập/đăng ký/đăng xuất qua Server Route `/api/auth/session`, mã hóa token trong cookie `cwm_session` (`lib/session-crypto.ts`) thay vì lưu base64 trên trình duyệt.
+  - **Tối ưu hiệu năng Auth (`lib/auth-client.tsx`):** dùng `AuthProvider` + `useAuth()` chia sẻ trạng thái đăng nhập toàn app, chỉ fetch `/api/auth/me` đúng 1 lần duy nhất.
+  - **Chia sẻ link chuẩn Zalo/Messenger:** bổ sung `app/opengraph-image.tsx` (`1200×630` PNG), `app/apple-icon.tsx` (`180×180` PNG) và `metadataBase` trong `app/layout.tsx`.
 - **`v2.2.0` (28/11/2026):**
   - **Hệ thống Theme đóng gói (`lib/themes.ts`):** dễ dàng mở rộng và cho phép người dùng tự đổi giao diện trên Header gồm **Tối mặc định**, **Sáng nhẹ nhàng**, và **T1 Đỏ rực** (nền blur + trang trí 2 bên tách biệt khỏi bố cục chính).
   - **Hiệu ứng Hoa Đào Rơi (`BlossomOverlay.tsx`):** canvas cánh hoa đào rơi nhẹ nhàng toàn trang, có nút **`🌸 Hoa đào / Tắt hoa`** cho từng người dùng và tự tối ưu theo `prefers-reduced-motion`.

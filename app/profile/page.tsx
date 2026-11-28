@@ -9,7 +9,6 @@ import { ProfileSkeleton } from '@/components/Skeletons';
 import { useToast } from '@/components/Toast';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth-client';
-import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 interface ProfileEvent {
   id: string;
@@ -46,7 +45,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
   const { data, isLoading, mutate } = useSWR<ProfileResponse | null>('/api/profile', fetcher);
-  const { authMode, refreshAuth } = useAuth();
+  const { refreshAuth } = useAuth();
 
   const [nameInput, setNameInput] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -87,12 +86,7 @@ export default function ProfilePage() {
   }
 
   async function handleLogout() {
-    if (authMode === 'dev') {
-      await fetch('/api/auth/dev', { method: 'DELETE' });
-    } else {
-      const sb = createSupabaseBrowserClient();
-      await sb.auth.signOut();
-    }
+    await fetch('/api/auth/session', { method: 'DELETE' });
     await refreshAuth();
     router.replace('/');
   }

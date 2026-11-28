@@ -3,12 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-client';
-import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { applyThemeToDocument, THEMES, useAppTheme, useBlossomEffect } from '@/lib/themes';
 import { UserAvatar } from './UserAvatar';
 
 export function Header() {
-  const { user, authMode, refreshAuth } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const [theme, setTheme] = useAppTheme();
   const [blossom, setBlossom] = useBlossomEffect();
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -30,12 +29,7 @@ export function Header() {
   }, [themeMenuOpen]);
 
   async function handleLogout() {
-    if (authMode === 'dev') {
-      await fetch('/api/auth/dev', { method: 'DELETE' });
-    } else {
-      const sb = createSupabaseBrowserClient();
-      await sb.auth.signOut();
-    }
+    await fetch('/api/auth/session', { method: 'DELETE' });
     await refreshAuth();
   }
 

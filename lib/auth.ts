@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
+import { SEALED_SESSION_COOKIE, unsealSession } from './session-crypto';
 
 export interface AuthUser {
   id: string;
@@ -52,6 +54,44 @@ export async function getAuthUser(): Promise<AuthUser | null> {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;
 
+  // 1. Ưu tiên cookie HttpOnly đã mã hóa AES-256-GCM
+  const sealed = unsealSession(cookieStore.get(SEALED_SESSION_COOKIE)?.value);
+  if (sealed) {
+    const sb = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await sb.auth.getUser(sealed.accessToken);
+    if (!error && data.user?.email) {
+      const meta = data.user.user_metadata as Record<string, unknown> | undefined;
+      const displayName =
+        (typeof meta?.display_name === 'string' && meta.display_name) ||
+        (typeof meta?.full_name === 'string' && meta.full_name) ||
+        (typeof meta?.name === 'string' && meta.name) ||
+        undefined;
+      return { id: data.user.id, email: data.user.email, displayName };
+    }
+    if (sealed.refreshToken) {
+      const refreshed = await sb.auth.refreshSession({
+        refresh_token: sealed.refreshToken,
+      });
+      if (!refreshed.error && refreshed.data.user?.email) {
+        const meta = refreshed.data.user.user_metadata as Record<string, unknown> | undefined;
+        const displayName =
+          (typeof meta?.display_name === 'string' && meta.display_name) ||
+          (typeof meta?.full_name === 'string' && meta.full_name) ||
+          (typeof meta?.name === 'string' && meta.name) ||
+          undefined;
+        return {
+          id: refreshed.data.user.id,
+          email: refreshed.data.user.email,
+          displayName,
+        };
+      }
+    }
+    return null;
+  }
+
+  // 2. Fallback tương thích ngược cho phiên Supabase SSR cũ (nếu còn)
   const supabase = createServerClient(url, anonKey, {
     cookies: {
       getAll() {

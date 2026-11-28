@@ -6,7 +6,6 @@ import { motion } from 'motion/react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useToast } from '@/components/Toast';
 import { useAuth } from '@/lib/auth-client';
-import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { loginSchema, registerSchema } from '@/lib/validation';
 
 function mapAuthError(msg: string): string {
@@ -68,44 +67,20 @@ function LoginPageInner() {
 
     setSubmitting(true);
     try {
-      if (isDevMode) {
-        const res = await fetch('/api/auth/dev', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, mode: tab }),
-        });
-        const json = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          setError(json.error ?? 'Đăng nhập thất bại');
-          return;
+      const endpoint = isDevMode ? '/api/auth/dev' : '/api/auth/session';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, mode: tab }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(mapAuthError(json.error ?? ''));
+        if (!isDevMode) {
+          turnstileRef.current?.reset();
+          setCaptchaToken('');
         }
-      } else {
-        const sb = createSupabaseBrowserClient();
-        if (tab === 'register') {
-          const { error: signUpErr } = await sb.auth.signUp({
-            email: parsed.data.email,
-            password: parsed.data.password,
-            options: { captchaToken: effectiveCaptcha },
-          });
-          if (signUpErr) {
-            setError(mapAuthError(signUpErr.message));
-            turnstileRef.current?.reset();
-            setCaptchaToken('');
-            return;
-          }
-        } else {
-          const { error: signInErr } = await sb.auth.signInWithPassword({
-            email: parsed.data.email,
-            password: parsed.data.password,
-            options: { captchaToken: effectiveCaptcha },
-          });
-          if (signInErr) {
-            setError(mapAuthError(signInErr.message));
-            turnstileRef.current?.reset();
-            setCaptchaToken('');
-            return;
-          }
-        }
+        return;
       }
 
       await refreshAuth();
