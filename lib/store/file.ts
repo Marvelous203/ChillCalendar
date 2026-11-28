@@ -2,8 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type {
+  CheckinRecord,
+  EndedBy,
   EventRecord,
+  LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   ResponseRecord,
@@ -22,25 +26,49 @@ interface DbShape {
   responses: ResponseRecord[];
   places: PlaceRecord[];
   votes: VoteRecord[];
+  checkins: CheckinRecord[];
+  moments: LiveMomentRecord[];
+  momentReactions: MomentReactionRecord[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 
 let writeLock: Promise<void> = Promise.resolve();
 
+function normalizeEvent(ev: EventRecord): EventRecord {
+  return {
+    ...ev,
+    liveFrom: ev.liveFrom ?? null,
+    endedAt: ev.endedAt ?? null,
+    endedBy: ev.endedBy ?? null,
+  };
+}
+
 async function readDb(): Promise<DbShape> {
   try {
     const raw = await fs.readFile(DB_PATH, 'utf8');
     const parsed = JSON.parse(raw) as Partial<DbShape>;
     return {
-      events: parsed.events ?? [],
+      events: (parsed.events ?? []).map(normalizeEvent),
       participants: parsed.participants ?? [],
       responses: parsed.responses ?? [],
       places: parsed.places ?? [],
       votes: parsed.votes ?? [],
+      checkins: parsed.checkins ?? [],
+      moments: parsed.moments ?? [],
+      momentReactions: parsed.momentReactions ?? [],
     };
   } catch {
-    return { events: [], participants: [], responses: [], places: [], votes: [] };
+    return {
+      events: [],
+      participants: [],
+      responses: [],
+      places: [],
+      votes: [],
+      checkins: [],
+      moments: [],
+      momentReactions: [],
+    };
   }
 }
 
@@ -112,6 +140,9 @@ export const fileStore: StoreAdapter = {
         finalPlaceId: null,
         finalizedBy: null,
         finalizedAt: null,
+        liveFrom: null,
+        endedAt: null,
+        endedBy: null,
         createdAt: new Date().toISOString(),
       };
       db.events.push(record);
@@ -141,6 +172,8 @@ export const fileStore: StoreAdapter = {
       );
       db.places = db.places.filter((p) => p.eventId !== eventId);
       db.votes = db.votes.filter((v) => !removedPlaceIds.has(v.placeId));
+      db.checkins = db.checkins.filter((c) => c.eventId !== eventId);
+      db.moments = db.moments.filter((m) => m.eventId !== eventId);
     });
   },
 
@@ -164,6 +197,7 @@ export const fileStore: StoreAdapter = {
       ev.finalPlaceId = input.finalPlaceId;
       ev.finalizedBy = input.finalizedBy;
       ev.finalizedAt = input.finalizedAt;
+      ev.liveFrom = input.liveFrom;
       return { ...ev };
     });
   },
@@ -361,6 +395,128 @@ export const fileStore: StoreAdapter = {
       if (on) {
         db.votes.push({ placeId, participantId });
       }
+    });
+  },
+
+  async listCheckins(eventId) {
+    const db = await readDb();
+    return db.checkins
+      .filter((c) => c.eventId === eventId)
+      .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt));
+  },
+
+  async upsertCheckin({ eventId, participantId, note, photoUrl }) {
+    return withDb((db) => {
+      const existing = db.checkins.find(
+        (c) => c.eventId === eventId && c.participantId === participantId
+      );
+      if (existing) {
+        if (note !== undefined) existing.note = note;
+        if (photoUrl !== undefined) existing.photoUrl = photoUrl;
+        return { ...existing };
+      }
+      const record: CheckinRecord = {
+        eventId,
+        participantId,
+        checkedInAt: new Date().toISOString(),
+        leftAt: null,
+        note: note ?? '',
+        photoUrl: photoUrl ?? '',
+      };
+      db.checkins.push(record);
+      return record;
+    });
+  },
+
+  async setLiveStartEarly(eventId, liveFromIso) {
+    return withDb((db) => {
+      const ev = db.events.find((e) => e.id === eventId);
+      if (!ev) return null;
+      ev.liveFrom = liveFromIso;
+      return { ...ev };
+    });
+  },
+
+  async endEvent(eventId, endedAtIso, endedBy: EndedBy) {
+    return withDb((db) => {
+      const ev = db.events.find((e) => e.id === eventId);
+      if (!ev) return null;
+      ev.endedAt = endedAtIso;
+      ev.endedBy = endedBy;
+      return { ...ev };
+    });
+  },
+
+  async listActiveLiveEvents() {
+    const db = await readDb();
+    return db.events.filter((e) => Boolean(e.liveFrom) && !e.endedAt);
+  },
+
+  async listMoments(eventId) {
+    const db = await readDb();
+    return db.moments
+      .filter((m) => m.eventId === eventId)
+      .map((m) => ({
+        ...m,
+        sticker: m.sticker ?? '',
+        pinned: Boolean(m.pinned),
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async createMoment(input) {
+    return withDb((db) => {
+      const record: LiveMomentRecord = {
+        id: randomUUID(),
+        eventId: input.eventId,
+        participantId: input.participantId,
+        photoUrl: input.photoUrl,
+        caption: input.caption,
+        sticker: input.sticker ?? '',
+        pinned: false,
+        createdAt: new Date().toISOString(),
+      };
+      db.moments.push(record);
+      return record;
+    });
+  },
+
+  async setMomentPinned(eventId, momentId, pinned) {
+    return withDb((db) => {
+      const m = db.moments.find((item) => item.eventId === eventId && item.id === momentId);
+      if (!m) return null;
+      m.pinned = pinned;
+      return { ...m };
+    });
+  },
+
+  async deleteMoment(eventId, momentId) {
+    await withDb((db) => {
+      db.moments = db.moments.filter((m) => !(m.eventId === eventId && m.id === momentId));
+      db.momentReactions = db.momentReactions.filter((r) => r.momentId !== momentId);
+    });
+  },
+
+  async listMomentReactions(eventId) {
+    const db = await readDb();
+    const momentIds = new Set(db.moments.filter((m) => m.eventId === eventId).map((m) => m.id));
+    return db.momentReactions.filter((r) => momentIds.has(r.momentId));
+  },
+
+  async setMomentReaction(momentId, participantId, emoji, mode) {
+    return withDb((db) => {
+      const idx = db.momentReactions.findIndex(
+        (r) => r.momentId === momentId && r.participantId === participantId && r.emoji === emoji
+      );
+      if (idx >= 0) {
+        if (mode === 'toggle') {
+          db.momentReactions.splice(idx, 1);
+          return { active: false };
+        }
+        return { active: true };
+      }
+      db.momentReactions.push({ momentId, participantId, emoji });
+      return { active: true };
     });
   },
 };

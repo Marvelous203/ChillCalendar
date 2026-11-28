@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { computeLiveFrom } from '@/lib/event-lifecycle';
 import { getRoomPermissions } from '@/lib/permissions';
 import { buildRoomBundle, resolveRoomContext } from '@/lib/room-service';
 import { getStore } from '@/lib/store';
 import { finalizeRoomSchema } from '@/lib/validation';
+import { broadcastRoomEvent, scheduleRoomAutoEnd } from '@/lib/ws-broadcaster';
 
 export async function POST(
   req: Request,
@@ -51,6 +53,7 @@ export async function POST(
   }
 
   const actorName = ctx.participant?.name ?? (permissions.isOwner ? 'Chủ sự kiện' : 'Thành viên');
+  const liveFrom = computeLiveFrom(parsed.data.date, parsed.data.from);
 
   const updated = await store.setFinalize(ctx.event.id, {
     finalDate: parsed.data.date,
@@ -59,13 +62,19 @@ export async function POST(
     finalPlaceId,
     finalizedBy: actorName,
     finalizedAt: new Date().toISOString(),
+    liveFrom,
   });
 
   if (!updated) {
     return NextResponse.json({ error: 'Không tìm thấy phòng' }, { status: 404 });
   }
 
+  scheduleRoomAutoEnd(updated);
   const bundle = await buildRoomBundle({ ...ctx, event: updated });
+  await broadcastRoomEvent(updated.code, {
+    type: 'snapshot',
+    data: bundle.live,
+  });
   return NextResponse.json(bundle);
 }
 
@@ -93,6 +102,7 @@ export async function DELETE(
     finalPlaceId: null,
     finalizedBy: null,
     finalizedAt: null,
+    liveFrom: null,
   });
 
   if (!updated) {

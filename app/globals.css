@@ -52,3 +52,66 @@ h1, h2, h3, .font-display {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+@keyframes cwm-float-up {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.5);
+    opacity: 0;
+  }
+  15% {
+    transform: translate3d(0, -18px, 0) scale(1.18);
+    opacity: 1;
+  }
+  40% {
+    transform: translate3d(0, -56px, 0) scale(1);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0, -150px, 0) scale(0.92);
+    opacity: 0;
+  }
+}
+
+@keyframes cwm-sway {
+  0%, 100% {
+    transform: translate3d(calc(var(--sway-amp, 12px) * -1), 0, 0) rotate(calc(var(--tilt, 8deg) * -1));
+  }
+  50% {
+    transform: translate3d(var(--sway-amp, 12px), 0, 0) rotate(var(--tilt, 8deg));
+  }
+}
+
+@keyframes cwm-pop-once {
+  0% {
+    transform: scale(0.8);
+  }
+  55% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.cwm-float-outer {
+  will-change: transform, opacity;
+  animation: cwm-float-up var(--float-dur, 2.3s) cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.cwm-float-inner {
+  will-change: transform;
+  animation: cwm-sway var(--sway-dur, 1.3s) ease-in-out infinite;
+}
+
+.cwm-pop-once {
+  animation: cwm-pop-once 0.28s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cwm-float-outer,
+  .cwm-float-inner,
+  .cwm-pop-once {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

@@ -1,27 +1,9 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAuthUser, isDevAuthMode } from '@/lib/auth';
+import { getUserDisplayName, writeDevProfile } from '@/lib/profile';
 import { getStore } from '@/lib/store';
-
-const PROFILES_PATH = path.join(process.cwd(), 'data', 'profiles.json');
-
-async function readDevProfiles(): Promise<Record<string, string>> {
-  try {
-    const raw = await fs.readFile(PROFILES_PATH, 'utf8');
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-async function writeDevProfile(userId: string, displayName: string): Promise<void> {
-  const map = await readDevProfiles();
-  map[userId] = displayName;
-  await fs.mkdir(path.dirname(PROFILES_PATH), { recursive: true });
-  await fs.writeFile(PROFILES_PATH, JSON.stringify(map, null, 2), 'utf8');
-}
 
 const updateProfileSchema = z.object({
   displayName: z.string().trim().min(1, 'Nhập tên hiển thị').max(40, 'Tối đa 40 ký tự'),
@@ -34,14 +16,11 @@ export async function GET() {
   }
 
   const store = getStore();
-  const [owned, joined, devProfiles] = await Promise.all([
+  const [owned, joined, displayName] = await Promise.all([
     store.listEventsByOwner(user.id),
     store.listJoinedEventsByUser(user.id),
-    isDevAuthMode() ? readDevProfiles() : Promise.resolve({} as Record<string, string>),
+    getUserDisplayName(user),
   ]);
-
-  const fallbackName = user.email.split('@')[0] || 'Bạn';
-  const displayName = devProfiles[user.id] || fallbackName;
 
   return NextResponse.json({
     profile: {
@@ -94,6 +73,18 @@ export async function PATCH(req: Request) {
     );
   }
 
+  if (!isDevAuthMode()) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (url && serviceKey) {
+      const sb = createClient(url, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      await sb.auth.admin.updateUserById(user.id, {
+        user_metadata: { display_name: parsed.data.displayName },
+      });
+    }
+  }
   await writeDevProfile(user.id, parsed.data.displayName);
   return NextResponse.json({ displayName: parsed.data.displayName });
 }

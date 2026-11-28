@@ -160,3 +160,27 @@ export const finalizeRoomSchema = z
 export const updateMemberSchema = z.object({
   status: z.enum(['approved', 'removed']),
 });
+
+export const checkinSchema = z.object({
+  note: z.string().trim().max(200, 'Ghi chú tối đa 200 ký tự').optional().default(''),
+  photoUrl: imageUrlSchema.optional().default(''),
+});
+
+export const createMomentSchema = z.object({
+  photoUrl: imageUrlSchema.refine((v) => v.length > 0, {
+    message: 'Vui lòng chọn hoặc chụp ảnh khoảnh khắc',
+  }),
+  caption: z.string().trim().max(200, 'Ghi chú tối đa 200 ký tự').optional().default(''),
+  sticker: z.enum(['', '🍻', '☕', '🎂', '🎤', '✨', '🍜']).optional().default(''),
+});
+
+export const reactMomentSchema = z.object({
+  momentId: z.string().min(1),
+  emoji: z.enum(['❤️', '😂', '🔥', '😮', '👏', '🎉']),
+  mode: z.enum(['toggle', 'set']).optional().default('toggle'),
+});
+
+export const pinMomentSchema = z.object({
+  momentId: z.string().min(1),
+  pinned: z.boolean(),
+});

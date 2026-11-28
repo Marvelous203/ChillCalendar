@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { generateSecretToken, hashParticipantToken } from '@/lib/auth';
 import { getRoomPermissions } from '@/lib/permissions';
+import { getUserDisplayName } from '@/lib/profile';
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit';
 import { buildRoomBundle, resolveRoomContext } from '@/lib/room-service';
 import { getStore } from '@/lib/store';
@@ -41,7 +43,32 @@ export async function GET(
     );
   }
 
-  const bundle = await buildRoomBundle(ctx);
+  let activeCtx = ctx;
+  let autoParticipantToken: string | undefined;
+
+  // Nếu người dùng đã đăng nhập và phòng cho phép vào ngay, tự động tham gia bằng tên hiển thị
+  if (
+    !activeCtx.participant &&
+    activeCtx.user &&
+    (activeCtx.event.visibility === 'link' || permissions.isOwner || hasValidInvite)
+  ) {
+    const displayName = await getUserDisplayName(activeCtx.user);
+    const rawToken = generateSecretToken();
+    const created = await getStore().createParticipant(
+      activeCtx.event.id,
+      hashParticipantToken(rawToken),
+      displayName,
+      'approved',
+      activeCtx.user.id
+    );
+    activeCtx = { ...activeCtx, participant: created };
+    autoParticipantToken = rawToken;
+  }
+
+  const bundle = await buildRoomBundle(activeCtx);
+  if (autoParticipantToken) {
+    bundle.autoParticipantToken = autoParticipantToken;
+  }
   return NextResponse.json(bundle);
 }
 
