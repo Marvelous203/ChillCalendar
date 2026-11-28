@@ -1,9 +1,14 @@
-# Hẹn Giờ Rảnh (`chillwithme`) · `v2.1.0`
+# Hẹn Giờ Rảnh (`chillwithme`) · `v2.2.0`
 
 Ứng dụng web giúp bạn bè hẹn lịch đi chơi, chọn giờ rảnh, đề xuất địa điểm / lộ trình nhiều chặng, chốt kèo và ghi lại khoảnh khắc **Đang diễn ra (Live)** theo thời gian thực — tối ưu cho điện thoại (Zalo/Messenger WebView), múi giờ chuẩn Việt Nam `Asia/Ho_Chi_Minh` (`UTC+7`).
 
 ## Lịch sử phiên bản (Changelog)
 
+- **`v2.2.0` (28/11/2026):**
+  - **Hệ thống Theme đóng gói (`lib/themes.ts`):** dễ dàng mở rộng và cho phép người dùng tự đổi giao diện trên Header gồm **Tối mặc định**, **Sáng nhẹ nhàng**, và **T1 Đỏ rực** (nền blur + trang trí 2 bên tách biệt khỏi bố cục chính).
+  - **Hiệu ứng Hoa Đào Rơi (`BlossomOverlay.tsx`):** canvas cánh hoa đào rơi nhẹ nhàng toàn trang, có nút **`🌸 Hoa đào / Tắt hoa`** cho từng người dùng và tự tối ưu theo `prefers-reduced-motion`.
+  - **Trang chủ mới:** thêm nút **Star ủng hộ** kiểu GitHub (yêu cầu đăng nhập, 1 lượt/tài khoản) kèm **Nhật ký Star minh bạch** bên phải, và **Hướng dẫn dạng Timeline** riêng cho khách vs tài khoản đã đăng nhập.
+  - **UX & Validate:** mặc định mở tab **Đăng nhập** khi vào `/login`, và chặn chọn **giờ quá khứ** khi tạo phòng cho ngày hôm nay theo `VN_TZ`.
 - **`v2.1.0` (28/11/2026):**
   - **Chế độ Đang diễn ra (Live Mode):** tự bật 30 phút trước giờ hẹn, hỗ trợ **Bắt đầu sớm** và **Kết thúc sự kiện** (hoặc tự đóng sau 24 giờ).
   - **WebSocket Realtime (`WS /ws/rooms/[code]`):** chạy chung port với Next.js (`server.mjs`), tự nối lại + fallback polling khi chạy serverless.
@@ -25,7 +30,7 @@
   - Mở Google Maps để lấy link chia sẻ, tự lấy ảnh minh họa từ link hoặc tải ảnh nén WebP.
   - Chế độ **Lộ trình kéo-thả** nhiều chặng (`📸 Check-in`, `🍜 Ăn uống`, `☕ Cà phê`, `🎤 Giải trí`) kèm nút mở toàn bộ tuyến đường trên Google Maps theo tọa độ chính xác.
 - **Chốt lịch & Chia sẻ:** Hiệu ứng pháo giấy khi chốt, nút **Thêm vào Google Calendar**, chia sẻ nhanh qua **Zalo / Messenger**, và **Hồ sơ người dùng (`/profile`)**.
-- **Giao diện Dark Mode mặc định** (có nút chuyển Sáng/Tối).
+- **Giao diện đa Theme & Hiệu ứng:** hỗ trợ đổi giữa **Tối / Sáng / T1 Đỏ** theo từng người dùng và nút bật/tắt hiệu ứng **Hoa đào rơi (`🌸`)**.
 
 ## Công nghệ sử dụng
 
