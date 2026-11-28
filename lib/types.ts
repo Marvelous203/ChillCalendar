@@ -61,13 +61,27 @@ export interface CheckinRecord {
   photoUrl?: string;
 }
 
+export const REACTION_EMOJIS = ['❤️', '😂', '🔥', '😮', '👏', '🎉'] as const;
+export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
+export const MOMENT_STICKERS = ['🍻', '☕', '🎂', '🎤', '✨', '🍜'] as const;
+export type MomentSticker = (typeof MOMENT_STICKERS)[number];
+
 export interface LiveMomentRecord {
   id: string;
   eventId: string;
   participantId: string;
   photoUrl: string;
   caption: string;
+  sticker?: string;
+  pinned?: boolean;
   createdAt: string;
+}
+
+export interface MomentReactionRecord {
+  momentId: string;
+  participantId: string;
+  emoji: ReactionEmoji;
 }
 
 export interface PublicMoment {
@@ -75,6 +89,11 @@ export interface PublicMoment {
   participantId: string;
   photoUrl: string;
   caption: string;
+  sticker: string;
+  pinned: boolean;
+  reactions: Partial<Record<ReactionEmoji, number>>;
+  myReactions: ReactionEmoji[];
+  totalReactions: number;
   createdAt: string;
 }
 

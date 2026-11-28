@@ -28,8 +28,22 @@ create table if not exists live_moments (
   created_at      timestamptz not null default now()
 );
 
+alter table live_moments
+  add column if not exists sticker text not null default '',
+  add column if not exists pinned boolean not null default false;
+
+create table if not exists live_moment_reactions (
+  moment_id       uuid not null references live_moments(id) on delete cascade,
+  participant_id  uuid not null references participants(id) on delete cascade,
+  emoji           text not null check (emoji in ('❤️', '😂', '🔥', '😮', '👏', '🎉')),
+  created_at      timestamptz not null default now(),
+  primary key (moment_id, participant_id, emoji)
+);
+
 alter table live_moments enable row level security;
+alter table live_moment_reactions enable row level security;
 create index if not exists live_moments_event_created_idx on live_moments (event_id, created_at desc);
+create index if not exists live_moment_reactions_moment_idx on live_moment_reactions (moment_id);
 
 grant usage on schema public to service_role;
 grant all privileges on all tables in schema public to service_role;

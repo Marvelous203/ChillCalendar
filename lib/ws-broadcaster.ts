@@ -1,9 +1,22 @@
-import type { EventRecord, LiveCounts, LiveSnapshot, PublicCheckin } from './types';
+import type {
+  EventRecord,
+  LiveCounts,
+  LiveSnapshot,
+  PublicCheckin,
+  ReactionEmoji,
+} from './types';
 
 export type WsRoomMessage =
   | { type: 'snapshot'; data: LiveSnapshot }
   | { type: 'checkin'; data: PublicCheckin; counts: LiveCounts }
   | { type: 'counts'; data: LiveCounts }
+  | {
+      type: 'reaction_count';
+      momentId: string;
+      reactions: Partial<Record<ReactionEmoji, number>>;
+      totalReactions: number;
+    }
+  | { type: 'reaction_burst'; momentId: string; emoji: ReactionEmoji; count?: number }
   | { type: 'live_started'; data: LiveSnapshot }
   | { type: 'ended'; data: LiveSnapshot }
   | { type: 'pong'; serverTime: string };

@@ -6,9 +6,11 @@ import type {
   EventStatus,
   LiveMomentRecord,
   LiveSnapshot,
+  MomentReactionRecord,
   ParticipantRecord,
   PublicCheckin,
   PublicMoment,
+  ReactionEmoji,
   ResponseRecord,
   TimelineEntry,
   TimelinePage,
@@ -87,6 +89,8 @@ export function buildLiveSnapshot(
   responses: ResponseRecord[],
   checkins: CheckinRecord[],
   moments: LiveMomentRecord[] = [],
+  reactions: MomentReactionRecord[] = [],
+  viewerParticipantId: string | null = null,
   now: Date = new Date()
 ): LiveSnapshot {
   const status = computeEventStatus(event, now);
@@ -116,6 +120,22 @@ export function buildLiveSnapshot(
     }
   }
 
+  const reactionCountsByMoment = new Map<string, Partial<Record<ReactionEmoji, number>>>();
+  const myReactionsByMoment = new Map<string, ReactionEmoji[]>();
+  const totalReactionsByMoment = new Map<string, number>();
+
+  for (const r of reactions) {
+    const counts = reactionCountsByMoment.get(r.momentId) ?? {};
+    counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
+    reactionCountsByMoment.set(r.momentId, counts);
+    totalReactionsByMoment.set(r.momentId, (totalReactionsByMoment.get(r.momentId) ?? 0) + 1);
+    if (viewerParticipantId && r.participantId === viewerParticipantId) {
+      const mine = myReactionsByMoment.get(r.momentId) ?? [];
+      if (!mine.includes(r.emoji)) mine.push(r.emoji);
+      myReactionsByMoment.set(r.momentId, mine);
+    }
+  }
+
   const momentsByParticipant = new Map<string, PublicMoment[]>();
   for (const m of moments) {
     if (!participantById.has(m.participantId)) continue;
@@ -125,6 +145,11 @@ export function buildLiveSnapshot(
       participantId: m.participantId,
       photoUrl: m.photoUrl,
       caption: m.caption,
+      sticker: m.sticker ?? '',
+      pinned: Boolean(m.pinned),
+      reactions: reactionCountsByMoment.get(m.id) ?? {},
+      myReactions: myReactionsByMoment.get(m.id) ?? [],
+      totalReactions: totalReactionsByMoment.get(m.id) ?? 0,
       createdAt: m.createdAt,
     });
     momentsByParticipant.set(m.participantId, arr);
@@ -149,6 +174,11 @@ export function buildLiveSnapshot(
                   participantId: c.participantId,
                   photoUrl: c.photoUrl,
                   caption: c.note ?? '',
+                  sticker: '',
+                  pinned: false,
+                  reactions: {},
+                  myReactions: [],
+                  totalReactions: 0,
                   createdAt: c.checkedInAt,
                 },
               ]

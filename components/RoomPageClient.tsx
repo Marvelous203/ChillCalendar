@@ -30,6 +30,7 @@ import type {
   ItineraryStop,
   LiveSnapshot,
   PlaceType,
+  ReactionEmoji,
   RoomBundle,
   Visibility,
 } from '@/lib/types';
@@ -118,12 +119,24 @@ export function RoomPageClient() {
     [code]
   );
 
-  const { snapshot: liveSnapshot, setSnapshot: setLiveSnapshot, connectionMode } = useLiveRoom({
+  const {
+    snapshot: liveSnapshot,
+    setSnapshot: setLiveSnapshot,
+    connectionMode,
+    sendReactionBurst,
+  } = useLiveRoom({
     code,
     status: data?.event.status ?? 'voting',
     initialSnapshot: data?.live ?? fallbackLive,
     onStatusChange: () => {
       void mutate();
+    },
+    onReactionBurst: (momentId, emoji, count) => {
+      window.dispatchEvent(
+        new CustomEvent('cwm-reaction-burst', {
+          detail: { momentId, emoji, count },
+        })
+      );
     },
   });
 
@@ -374,7 +387,7 @@ export function RoomPageClient() {
     }
   }
 
-  async function handleAddMoment(payload: { photoUrl: string; caption: string }) {
+  async function handleAddMoment(payload: { photoUrl: string; caption: string; sticker?: string }) {
     const res = await fetch(`/api/rooms/${code}/moments`, {
       method: 'POST',
       headers: authHeaders(),
@@ -387,6 +400,57 @@ export function RoomPageClient() {
     }
     setLiveSnapshot(json);
     toast('Đã đăng khoảnh khắc mới!', 'success');
+  }
+
+  async function handleReactMoment(
+    momentId: string,
+    emoji: ReactionEmoji,
+    mode: 'toggle' | 'set'
+  ) {
+    const res = await fetch(`/api/rooms/${code}/moments/react`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ momentId, emoji, mode }),
+    });
+    if (!res.ok) return;
+    const json = (await res.json()) as {
+      momentId: string;
+      reactions: Partial<Record<ReactionEmoji, number>>;
+      myReactions: ReactionEmoji[];
+      totalReactions: number;
+    };
+    setLiveSnapshot({
+      ...liveSnapshot,
+      checkins: liveSnapshot.checkins.map((c) => ({
+        ...c,
+        moments: c.moments.map((m) =>
+          m.id === json.momentId
+            ? {
+                ...m,
+                reactions: json.reactions,
+                myReactions: json.myReactions,
+                totalReactions: json.totalReactions,
+              }
+            : m
+        ),
+      })),
+      serverTime: new Date().toISOString(),
+    });
+  }
+
+  async function handlePinMoment(momentId: string, pinned: boolean) {
+    const res = await fetch(`/api/rooms/${code}/moments/pin`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ momentId, pinned }),
+    });
+    const json = (await res.json()) as LiveSnapshot & { error?: string };
+    if (!res.ok) {
+      toast(json.error ?? 'Không thể ghim khoảnh khắc', 'error');
+      return;
+    }
+    setLiveSnapshot(json);
+    toast(pinned ? 'Đã ghim khoảnh khắc lên đầu!' : 'Đã bỏ ghim khoảnh khắc', 'info');
   }
 
   async function handleDeleteMoment(momentId: string) {
@@ -557,6 +621,9 @@ export function RoomPageClient() {
           canEndLive={data.permissions.canEndLive}
           onCheckin={handleCheckin}
           onAddMoment={handleAddMoment}
+          onReactMoment={handleReactMoment}
+          onPinMoment={handlePinMoment}
+          onSendBurst={sendReactionBurst}
           onDeleteMoment={handleDeleteMoment}
           onEndLive={handleEndLive}
         />

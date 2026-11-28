@@ -6,9 +6,11 @@ import type {
   ItineraryStop,
   LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   PlaceType,
+  ReactionEmoji,
   ResponseRecord,
   Visibility,
   VoteRecord,
@@ -124,6 +126,16 @@ export interface StoreAdapter {
     participantId: string;
     photoUrl: string;
     caption: string;
+    sticker?: string;
   }): Promise<LiveMomentRecord>;
+  setMomentPinned(eventId: string, momentId: string, pinned: boolean): Promise<LiveMomentRecord | null>;
   deleteMoment(eventId: string, momentId: string): Promise<void>;
+
+  listMomentReactions(eventId: string): Promise<MomentReactionRecord[]>;
+  setMomentReaction(
+    momentId: string,
+    participantId: string,
+    emoji: ReactionEmoji,
+    mode: 'toggle' | 'set'
+  ): Promise<{ active: boolean }>;
 }

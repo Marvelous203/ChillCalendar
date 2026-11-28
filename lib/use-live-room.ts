@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getParticipantToken } from '@/lib/participant-token';
-import type { EventStatus, LiveSnapshot } from '@/lib/types';
+import type { EventStatus, LiveSnapshot, ReactionEmoji } from '@/lib/types';
 import type { WsRoomMessage } from '@/lib/ws-broadcaster';
 
 export type LiveConnectionMode = 'idle' | 'connecting' | 'ws' | 'polling';
@@ -12,6 +12,7 @@ interface UseLiveRoomOptions {
   status: EventStatus;
   initialSnapshot: LiveSnapshot;
   onStatusChange?: (nextStatus: EventStatus) => void;
+  onReactionBurst?: (momentId: string, emoji: ReactionEmoji, count: number) => void;
 }
 
 function buildWsUrl(code: string, pt: string): string {
@@ -29,21 +30,27 @@ export function useLiveRoom({
   status,
   initialSnapshot,
   onStatusChange,
+  onReactionBurst,
 }: UseLiveRoomOptions) {
   const [liveOverride, setLiveOverride] = useState<LiveSnapshot | null>(null);
   const [rawMode, setRawMode] = useState<LiveConnectionMode>('connecting');
+  const activeWsRef = useRef<WebSocket | null>(null);
 
   const snapshot =
     liveOverride &&
-    (!initialSnapshot.serverTime ||
-      liveOverride.serverTime >= initialSnapshot.serverTime)
+      (!initialSnapshot.serverTime ||
+        liveOverride.serverTime >= initialSnapshot.serverTime)
       ? liveOverride
       : initialSnapshot;
 
   const onStatusChangeRef = useRef(onStatusChange);
+  const onReactionBurstRef = useRef(onReactionBurst);
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
   }, [onStatusChange]);
+  useEffect(() => {
+    onReactionBurstRef.current = onReactionBurst;
+  }, [onReactionBurst]);
 
   const applySnapshot = useCallback(
     (next: LiveSnapshot) => {
@@ -138,6 +145,7 @@ export function useLiveRoom({
 
       ws.onopen = () => {
         if (cancelled) return;
+        activeWsRef.current = ws;
         attempt = 0;
         stopPolling();
         setRawMode('ws');
@@ -184,6 +192,32 @@ export function useLiveRoom({
                 serverTime: new Date().toISOString(),
               };
             });
+            return;
+          }
+          if (msg.type === 'reaction_count') {
+            setLiveOverride((prev) => {
+              const base = prev ?? initialSnapshot;
+              return {
+                ...base,
+                checkins: base.checkins.map((c) => ({
+                  ...c,
+                  moments: c.moments.map((m) =>
+                    m.id === msg.momentId
+                      ? {
+                        ...m,
+                        reactions: msg.reactions,
+                        totalReactions: msg.totalReactions,
+                      }
+                      : m
+                  ),
+                })),
+                serverTime: new Date().toISOString(),
+              };
+            });
+            return;
+          }
+          if (msg.type === 'reaction_burst') {
+            onReactionBurstRef.current?.(msg.momentId, msg.emoji, msg.count ?? 1);
           }
         } catch {
           // Bỏ qua thông điệp không hợp lệ
@@ -237,6 +271,7 @@ export function useLiveRoom({
 
     return () => {
       cancelled = true;
+      activeWsRef.current = null;
       document.removeEventListener('visibilitychange', handleWake);
       window.removeEventListener('online', handleWake);
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
@@ -245,6 +280,13 @@ export function useLiveRoom({
     };
   }, [code, status, initialSnapshot, applySnapshot, fetchLatest]);
 
+  const sendReactionBurst = useCallback((momentId: string, emoji: ReactionEmoji) => {
+    const ws = activeWsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'reaction_burst', momentId, emoji }));
+    }
+  }, []);
+
   const connectionMode: LiveConnectionMode = status !== 'live' ? 'idle' : rawMode;
 
   return {
@@ -252,5 +294,6 @@ export function useLiveRoom({
     setSnapshot: applySnapshot,
     connectionMode,
     refreshLive: fetchLatest,
+    sendReactionBurst,
   };
 }

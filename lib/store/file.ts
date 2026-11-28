@@ -7,6 +7,7 @@ import type {
   EventRecord,
   LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   ResponseRecord,
@@ -27,6 +28,7 @@ interface DbShape {
   votes: VoteRecord[];
   checkins: CheckinRecord[];
   moments: LiveMomentRecord[];
+  momentReactions: MomentReactionRecord[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'data', 'db.json');
@@ -54,9 +56,19 @@ async function readDb(): Promise<DbShape> {
       votes: parsed.votes ?? [],
       checkins: parsed.checkins ?? [],
       moments: parsed.moments ?? [],
+      momentReactions: parsed.momentReactions ?? [],
     };
   } catch {
-    return { events: [], participants: [], responses: [], places: [], votes: [], checkins: [], moments: [] };
+    return {
+      events: [],
+      participants: [],
+      responses: [],
+      places: [],
+      votes: [],
+      checkins: [],
+      moments: [],
+      momentReactions: [],
+    };
   }
 }
 
@@ -444,6 +456,11 @@ export const fileStore: StoreAdapter = {
     const db = await readDb();
     return db.moments
       .filter((m) => m.eventId === eventId)
+      .map((m) => ({
+        ...m,
+        sticker: m.sticker ?? '',
+        pinned: Boolean(m.pinned),
+      }))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
@@ -455,6 +472,8 @@ export const fileStore: StoreAdapter = {
         participantId: input.participantId,
         photoUrl: input.photoUrl,
         caption: input.caption,
+        sticker: input.sticker ?? '',
+        pinned: false,
         createdAt: new Date().toISOString(),
       };
       db.moments.push(record);
@@ -462,9 +481,42 @@ export const fileStore: StoreAdapter = {
     });
   },
 
+  async setMomentPinned(eventId, momentId, pinned) {
+    return withDb((db) => {
+      const m = db.moments.find((item) => item.eventId === eventId && item.id === momentId);
+      if (!m) return null;
+      m.pinned = pinned;
+      return { ...m };
+    });
+  },
+
   async deleteMoment(eventId, momentId) {
     await withDb((db) => {
       db.moments = db.moments.filter((m) => !(m.eventId === eventId && m.id === momentId));
+      db.momentReactions = db.momentReactions.filter((r) => r.momentId !== momentId);
+    });
+  },
+
+  async listMomentReactions(eventId) {
+    const db = await readDb();
+    const momentIds = new Set(db.moments.filter((m) => m.eventId === eventId).map((m) => m.id));
+    return db.momentReactions.filter((r) => momentIds.has(r.momentId));
+  },
+
+  async setMomentReaction(momentId, participantId, emoji, mode) {
+    return withDb((db) => {
+      const idx = db.momentReactions.findIndex(
+        (r) => r.momentId === momentId && r.participantId === participantId && r.emoji === emoji
+      );
+      if (idx >= 0) {
+        if (mode === 'toggle') {
+          db.momentReactions.splice(idx, 1);
+          return { active: false };
+        }
+        return { active: true };
+      }
+      db.momentReactions.push({ momentId, participantId, emoji });
+      return { active: true };
     });
   },
 };

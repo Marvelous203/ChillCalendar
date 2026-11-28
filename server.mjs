@@ -14,16 +14,51 @@ const handle = app.getRequestHandler();
 /** Quản lý phòng WebSocket và bộ đếm tự kết thúc 24 giờ trong bộ nhớ. */
 const rooms = new Map(); // code -> Set<WebSocket>
 const autoEndTimers = new Map(); // eventId -> Timeout
+const ALLOWED_EMOJIS = new Set(['❤️', '😂', '🔥', '😮', '👏', '🎉']);
+const burstQueues = new Map(); // `${code}:${momentId}:${emoji}` -> { code, momentId, emoji, count, senderSet }
+let burstFlushTimer = null;
 
-function broadcast(code, message) {
+function broadcast(code, message, excludeWs = null) {
   const key = String(code).toUpperCase();
   const clients = rooms.get(key);
   if (!clients || clients.size === 0) return;
   const payload = JSON.stringify(message);
   for (const ws of clients) {
-    if (ws.readyState === 1) {
+    if (ws !== excludeWs && ws.readyState === 1) {
       ws.send(payload);
     }
+  }
+}
+
+function enqueueReactionBurst(code, momentId, emoji, senderWs) {
+  const key = `${code}:${momentId}:${emoji}`;
+  let entry = burstQueues.get(key);
+  if (!entry) {
+    entry = { code, momentId, emoji, count: 0, senderWs };
+    burstQueues.set(key, entry);
+  } else if (entry.senderWs !== senderWs) {
+    entry.senderWs = null; // Nhiều người cùng thả thì phát cho tất cả
+  }
+  entry.count = Math.min(8, entry.count + 1);
+
+  if (!burstFlushTimer) {
+    burstFlushTimer = setTimeout(() => {
+      burstFlushTimer = null;
+      const items = Array.from(burstQueues.values());
+      burstQueues.clear();
+      for (const item of items) {
+        broadcast(
+          item.code,
+          {
+            type: 'reaction_burst',
+            momentId: item.momentId,
+            emoji: item.emoji,
+            count: item.count,
+          },
+          item.senderWs
+        );
+      }
+    }, 120);
   }
 }
 
@@ -190,6 +225,23 @@ app.prepare().then(() => {
             const msg = JSON.parse(String(data));
             if (msg?.type === 'ping') {
               ws.send(JSON.stringify({ type: 'pong', serverTime: new Date().toISOString() }));
+              return;
+            }
+            if (
+              msg?.type === 'reaction_burst' &&
+              typeof msg.momentId === 'string' &&
+              msg.momentId.length > 0 &&
+              ALLOWED_EMOJIS.has(msg.emoji)
+            ) {
+              const now = Date.now();
+              if (!ws.burstWindowStart || now - ws.burstWindowStart > 2000) {
+                ws.burstWindowStart = now;
+                ws.burstCount = 0;
+              }
+              ws.burstCount += 1;
+              if (ws.burstCount <= 16) {
+                enqueueReactionBurst(code, msg.momentId, msg.emoji, ws);
+              }
             }
           } catch {
             // Bỏ qua gói tin không hợp lệ

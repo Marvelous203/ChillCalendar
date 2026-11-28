@@ -81,16 +81,26 @@ export async function POST(
     participantId: ctx.participant.id,
     photoUrl: parsed.data.photoUrl,
     caption: parsed.data.caption,
+    sticker: parsed.data.sticker,
   });
 
-  const [participants, responses, checkins, moments] = await Promise.all([
+  const [participants, responses, checkins, moments, reactions] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listCheckins(ctx.event.id),
     store.listMoments(ctx.event.id),
+    store.listMomentReactions(ctx.event.id),
   ]);
 
-  const snapshot = buildLiveSnapshot(ctx.event, participants, responses, checkins, moments);
+  const snapshot = buildLiveSnapshot(
+    ctx.event,
+    participants,
+    responses,
+    checkins,
+    moments,
+    reactions,
+    ctx.participant.id
+  );
   const myCheckin = snapshot.checkins.find((c) => c.participantId === ctx.participant!.id);
 
   if (myCheckin) {
@@ -138,13 +148,22 @@ export async function DELETE(
 
   await store.deleteMoment(ctx.event.id, momentId);
 
-  const [participants, responses, checkins, moments] = await Promise.all([
+  const [participants, responses, checkins, moments, reactions] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listCheckins(ctx.event.id),
     store.listMoments(ctx.event.id),
+    store.listMomentReactions(ctx.event.id),
   ]);
-  const snapshot = buildLiveSnapshot(ctx.event, participants, responses, checkins, moments);
+  const snapshot = buildLiveSnapshot(
+    ctx.event,
+    participants,
+    responses,
+    checkins,
+    moments,
+    reactions,
+    ctx.participant?.id ?? null
+  );
 
   await broadcastRoomEvent(ctx.event.code, {
     type: 'snapshot',

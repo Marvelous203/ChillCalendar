@@ -81,7 +81,17 @@ create table live_moments (
   participant_id  uuid not null references participants(id) on delete cascade,
   photo_url       text not null check (char_length(photo_url) between 1 and 500),
   caption         text not null default '' check (char_length(caption) <= 200),
+  sticker         text not null default '' check (char_length(sticker) <= 16),
+  pinned          boolean not null default false,
   created_at      timestamptz not null default now()
+);
+
+create table live_moment_reactions (
+  moment_id       uuid not null references live_moments(id) on delete cascade,
+  participant_id  uuid not null references participants(id) on delete cascade,
+  emoji           text not null check (emoji in ('❤️', '😂', '🔥', '😮', '👏', '🎉')),
+  created_at      timestamptz not null default now(),
+  primary key (moment_id, participant_id, emoji)
 );
 
 alter table events add foreign key (final_place) references places(id) on delete set null;
@@ -94,6 +104,7 @@ alter table places       enable row level security;
 alter table votes        enable row level security;
 alter table checkins     enable row level security;
 alter table live_moments enable row level security;
+alter table live_moment_reactions enable row level security;
 
 create index on events (owner_id);
 create index on participants (event_id);
@@ -101,6 +112,7 @@ create index on responses (event_id);
 create index on places (event_id);
 create index on checkins (event_id, checked_in_at desc);
 create index on live_moments (event_id, created_at desc);
+create index on live_moment_reactions (moment_id);
 
 grant usage on schema public to service_role;
 grant all privileges on all tables in schema public to service_role;

@@ -73,16 +73,25 @@ function toPublicParticipant(p: ParticipantRecord): PublicParticipant {
 
 export async function buildRoomBundle(ctx: RoomContext): Promise<RoomBundle> {
   const store = getStore();
-  const [participants, responses, places, votes, checkins, moments] = await Promise.all([
+  const [participants, responses, places, votes, checkins, moments, reactions] = await Promise.all([
     store.listParticipants(ctx.event.id),
     store.listResponses(ctx.event.id),
     store.listPlaces(ctx.event.id),
     store.listVotesByEvent(ctx.event.id),
     store.listCheckins(ctx.event.id),
     store.listMoments(ctx.event.id),
+    store.listMomentReactions(ctx.event.id),
   ]);
 
-  const live = buildLiveSnapshot(ctx.event, participants, responses, checkins, moments);
+  const live = buildLiveSnapshot(
+    ctx.event,
+    participants,
+    responses,
+    checkins,
+    moments,
+    reactions,
+    ctx.participant?.id ?? null
+  );
   const permissions = getRoomPermissions(ctx.event, ctx.userId, ctx.participant);
   const visibleParticipants = permissions.isOwner
     ? participants.filter((p) => p.status !== 'removed')

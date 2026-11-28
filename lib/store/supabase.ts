@@ -6,9 +6,11 @@ import type {
   ItineraryStop,
   LiveMomentRecord,
   MemberStatus,
+  MomentReactionRecord,
   ParticipantRecord,
   PlaceRecord,
   PlaceType,
+  ReactionEmoji,
   ResponseRecord,
 } from '../types';
 import type {
@@ -736,6 +738,8 @@ export const supabaseStore: StoreAdapter = {
         participant_id: string;
         photo_url: string;
         caption: string;
+        sticker?: string;
+        pinned?: boolean;
         created_at: string;
       }>
     ).map(
@@ -745,6 +749,8 @@ export const supabaseStore: StoreAdapter = {
         participantId: m.participant_id,
         photoUrl: m.photo_url,
         caption: m.caption ?? '',
+        sticker: m.sticker ?? '',
+        pinned: Boolean(m.pinned),
         createdAt: m.created_at,
       })
     );
@@ -759,6 +765,7 @@ export const supabaseStore: StoreAdapter = {
         participant_id: input.participantId,
         photo_url: input.photoUrl,
         caption: input.caption ?? '',
+        sticker: input.sticker ?? '',
       })
       .select('*')
       .single();
@@ -769,6 +776,8 @@ export const supabaseStore: StoreAdapter = {
       participant_id: string;
       photo_url: string;
       caption: string;
+      sticker?: string;
+      pinned?: boolean;
       created_at: string;
     };
     return {
@@ -777,6 +786,41 @@ export const supabaseStore: StoreAdapter = {
       participantId: m.participant_id,
       photoUrl: m.photo_url,
       caption: m.caption ?? '',
+      sticker: m.sticker ?? '',
+      pinned: Boolean(m.pinned),
+      createdAt: m.created_at,
+    };
+  },
+
+  async setMomentPinned(eventId, momentId, pinned) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moments')
+      .update({ pinned })
+      .eq('event_id', eventId)
+      .eq('id', momentId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const m = data as {
+      id: string;
+      event_id: string;
+      participant_id: string;
+      photo_url: string;
+      caption: string;
+      sticker?: string;
+      pinned?: boolean;
+      created_at: string;
+    };
+    return {
+      id: m.id,
+      eventId: m.event_id,
+      participantId: m.participant_id,
+      photoUrl: m.photo_url,
+      caption: m.caption ?? '',
+      sticker: m.sticker ?? '',
+      pinned: Boolean(m.pinned),
       createdAt: m.created_at,
     };
   },
@@ -789,5 +833,56 @@ export const supabaseStore: StoreAdapter = {
       .eq('event_id', eventId)
       .eq('id', momentId);
     if (error) throw error;
+  },
+
+  async listMomentReactions(eventId) {
+    const sb = getServiceClient();
+    const { data, error } = await sb
+      .from('live_moment_reactions')
+      .select('moment_id, participant_id, emoji, live_moments!inner(event_id)')
+      .eq('live_moments.event_id', eventId);
+    if (error) throw error;
+    return (
+      data as Array<{ moment_id: string; participant_id: string; emoji: ReactionEmoji }>
+    ).map(
+      (r): MomentReactionRecord => ({
+        momentId: r.moment_id,
+        participantId: r.participant_id,
+        emoji: r.emoji,
+      })
+    );
+  },
+
+  async setMomentReaction(momentId, participantId, emoji, mode) {
+    const sb = getServiceClient();
+    const { data: existing } = await sb
+      .from('live_moment_reactions')
+      .select('moment_id')
+      .eq('moment_id', momentId)
+      .eq('participant_id', participantId)
+      .eq('emoji', emoji)
+      .maybeSingle();
+
+    if (existing) {
+      if (mode === 'toggle') {
+        const { error } = await sb
+          .from('live_moment_reactions')
+          .delete()
+          .eq('moment_id', momentId)
+          .eq('participant_id', participantId)
+          .eq('emoji', emoji);
+        if (error) throw error;
+        return { active: false };
+      }
+      return { active: true };
+    }
+
+    const { error } = await sb.from('live_moment_reactions').insert({
+      moment_id: momentId,
+      participant_id: participantId,
+      emoji,
+    });
+    if (error) throw error;
+    return { active: true };
   },
 };

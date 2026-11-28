@@ -2,22 +2,32 @@
 
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createFloatingEmoji,
+  EmojiBurstOverlay,
+  type FloatingEmojiItem,
+} from '@/components/EmojiBurstOverlay';
 import { UserAvatar } from '@/components/UserAvatar';
 import { compressImageToWebp } from '@/lib/image-compress';
 import { getParticipantToken } from '@/lib/participant-token';
 import type { LiveConnectionMode } from '@/lib/use-live-room';
-import type {
-  LiveSnapshot,
-  PublicMoment,
-  PublicParticipant,
-  TimelineEntry,
-  TimelinePage,
+import {
+  MOMENT_STICKERS,
+  REACTION_EMOJIS,
+  type LiveSnapshot,
+  type PublicMoment,
+  type PublicParticipant,
+  type ReactionEmoji,
+  type TimelineEntry,
+  type TimelinePage,
 } from '@/lib/types';
 
 const MAX_MOMENTS = 5;
 const MERGE_WINDOW_MS = 5 * 60 * 1000;
 const INITIAL_VISIBLE_LIMIT = 20;
+const MAX_FLOATING_EMOJIS = 24;
+const HOT_REACTION_THRESHOLD = 3;
 
 const CUTE_THEMES = [
   {
@@ -56,26 +66,26 @@ type DisplayView = 'timeline' | 'hourly';
 
 type TimelineBlock =
   | {
-      id: string;
-      kind: 'checkin';
-      timestamp: string;
-      participantId: string;
-      name: string;
-      note: string;
-    }
+    id: string;
+    kind: 'checkin';
+    timestamp: string;
+    participantId: string;
+    name: string;
+    note: string;
+  }
   | {
+    id: string;
+    kind: 'moment_group';
+    timestamp: string;
+    participantId: string;
+    name: string;
+    moments: Array<{
       id: string;
-      kind: 'moment_group';
-      timestamp: string;
-      participantId: string;
-      name: string;
-      moments: Array<{
-        id: string;
-        photoUrl: string;
-        caption: string;
-        createdAt: string;
-      }>;
-    };
+      photoUrl: string;
+      caption: string;
+      createdAt: string;
+    }>;
+  };
 
 function formatDuration(ms: number): string {
   const safe = Math.max(0, Math.floor(ms / 1000));
@@ -169,7 +179,7 @@ function groupTimelineBlocks(entries: TimelineEntry[]): TimelineBlock[] {
       prev.kind === 'moment_group' &&
       prev.participantId === entry.participantId &&
       Math.abs(Date.parse(prev.moments[prev.moments.length - 1].createdAt) - Date.parse(entry.timestamp)) <=
-        MERGE_WINDOW_MS
+      MERGE_WINDOW_MS
     ) {
       prev.moments.push({
         id: entry.id.replace(/^moment:/, ''),
@@ -204,6 +214,19 @@ function countEntries(snap: LiveSnapshot): number {
   return snap.checkins.reduce((sum, c) => sum + 1 + c.moments.length, 0);
 }
 
+function getTopReaction(
+  reactions: Partial<Record<ReactionEmoji, number>>
+): { emoji: ReactionEmoji; count: number } | null {
+  let best: { emoji: ReactionEmoji; count: number } | null = null;
+  for (const emoji of REACTION_EMOJIS) {
+    const count = reactions[emoji] ?? 0;
+    if (count > 0 && (!best || count > best.count)) {
+      best = { emoji, count };
+    }
+  }
+  return best;
+}
+
 export function LiveRoomPanel({
   snapshot,
   participants = [],
@@ -214,6 +237,9 @@ export function LiveRoomPanel({
   canEndLive,
   onCheckin,
   onAddMoment,
+  onReactMoment,
+  onPinMoment,
+  onSendBurst,
   onDeleteMoment,
   onEndLive,
 }: {
@@ -225,7 +251,10 @@ export function LiveRoomPanel({
   canCheckin: boolean;
   canEndLive: boolean;
   onCheckin: (payload: { note?: string; photoUrl?: string }) => Promise<void>;
-  onAddMoment: (payload: { photoUrl: string; caption: string }) => Promise<void>;
+  onAddMoment: (payload: { photoUrl: string; caption: string; sticker?: string }) => Promise<void>;
+  onReactMoment?: (momentId: string, emoji: ReactionEmoji, mode: 'toggle' | 'set') => Promise<void>;
+  onPinMoment?: (momentId: string, pinned: boolean) => Promise<void>;
+  onSendBurst?: (momentId: string, emoji: ReactionEmoji) => void;
   onDeleteMoment: (momentId: string) => Promise<void>;
   onEndLive: () => Promise<void>;
 }) {
@@ -365,13 +394,140 @@ export function LiveRoomPanel({
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
 
-  // Composer chụp / đăng khoảnh khắc (ảnh + chữ cùng lúc)
+  // Composer chụp / đăng khoảnh khắc (ảnh + chữ + sticker cùng lúc)
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerPreviewUrl, setComposerPreviewUrl] = useState<string | null>(null);
   const [composerBlob, setComposerBlob] = useState<Blob | null>(null);
   const [composerCaption, setComposerCaption] = useState('');
+  const [composerSticker, setComposerSticker] = useState('');
   const [composerError, setComposerError] = useState<string | null>(null);
   const [uploadingMoment, setUploadingMoment] = useState(false);
+
+  // Hiệu ứng emoji bay & thanh chọn reaction
+  const [floatingEmojis, setFloatingEmojis] = useState<FloatingEmojiItem[]>([]);
+  const [openPickerMomentId, setOpenPickerMomentId] = useState<string | null>(null);
+  const lastBurstAtRef = useRef(0);
+  const tapTimerRef = useRef<number | null>(null);
+  const lastTapRef = useRef<{ momentId: string; time: number } | null>(null);
+
+  function spawnFloatingEmojis(
+    momentId: string,
+    emoji: ReactionEmoji,
+    count = 1,
+    xPct?: number,
+    yPct?: number
+  ) {
+    const clamped = Math.max(1, Math.min(4, count));
+    setFloatingEmojis((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < clamped; i++) {
+        next.push(
+          createFloatingEmoji(
+            momentId,
+            emoji,
+            xPct !== undefined ? xPct + (i * 4 - 2) : undefined,
+            yPct
+          )
+        );
+      }
+      return next.length > MAX_FLOATING_EMOJIS
+        ? next.slice(next.length - MAX_FLOATING_EMOJIS)
+        : next;
+    });
+  }
+
+  function removeFloatingEmoji(id: string) {
+    setFloatingEmojis((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  useEffect(() => {
+    function onWsBurst(evt: Event) {
+      const custom = evt as CustomEvent<{
+        momentId: string;
+        emoji: ReactionEmoji;
+        count: number;
+      }>;
+      if (!custom.detail) return;
+      spawnFloatingEmojis(custom.detail.momentId, custom.detail.emoji, custom.detail.count);
+    }
+    window.addEventListener('cwm-reaction-burst', onWsBurst);
+    return () => window.removeEventListener('cwm-reaction-burst', onWsBurst);
+  }, []);
+
+  const triggerReactionBurst = useCallback(
+    (
+      momentId: string,
+      emoji: ReactionEmoji,
+      mode: 'toggle' | 'set' | 'burst_only',
+      xPct?: number,
+      yPct?: number
+    ) => {
+      const now = performance.now();
+      if (now - lastBurstAtRef.current < 85) return; // Giới hạn tốc độ tối đa ~12 lần/giây
+      lastBurstAtRef.current = now;
+
+      spawnFloatingEmojis(momentId, emoji, 1, xPct, yPct);
+      onSendBurst?.(momentId, emoji);
+      if (emoji === '❤️') navigator.vibrate?.(12);
+
+      if (mode !== 'burst_only' && isLive && canCheckin && !momentId.startsWith('checkin-')) {
+        void onReactMoment?.(momentId, emoji, mode);
+      }
+    },
+    [isLive, canCheckin, onSendBurst, onReactMoment]
+  );
+
+  const handlePhotoTap = useCallback(
+    (
+      momentId: string,
+      e: React.MouseEvent<HTMLElement>,
+      onSingleTap: () => void
+    ) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const xPct = Math.max(10, Math.min(90, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(15, Math.min(85, ((e.clientY - rect.top) / rect.height) * 100));
+      const now = e.timeStamp;
+
+      if (
+        lastTapRef.current &&
+        lastTapRef.current.momentId === momentId &&
+        now - lastTapRef.current.time < 260
+      ) {
+        if (tapTimerRef.current !== null) {
+          window.clearTimeout(tapTimerRef.current);
+          tapTimerRef.current = null;
+        }
+        lastTapRef.current = null;
+        triggerReactionBurst(momentId, '❤️', 'set', xPct, yPct);
+        return;
+      }
+
+      lastTapRef.current = { momentId, time: now };
+      if (tapTimerRef.current !== null) window.clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = window.setTimeout(() => {
+        tapTimerRef.current = null;
+        lastTapRef.current = null;
+        onSingleTap();
+      }, 230);
+    },
+    [triggerReactionBurst]
+  );
+
+  const momentMetaById = useMemo(() => {
+    const map = new Map<string, PublicMoment & { authorName: string }>();
+    for (const c of activeSnapshot.checkins) {
+      for (const m of c.moments) {
+        map.set(m.id, { ...m, authorName: c.name });
+      }
+    }
+    return map;
+  }, [activeSnapshot.checkins]);
+
+  const topLikedMoments = useMemo(() => {
+    const all = Array.from(momentMetaById.values()).filter((m) => m.totalReactions > 0);
+    all.sort((a, b) => b.totalReactions - a.totalReactions);
+    return all.slice(0, 3);
+  }, [momentMetaById]);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -380,10 +536,14 @@ export function LiveRoomPanel({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
 
+type LightboxItem = Pick<
+  PublicMoment,
+  'id' | 'participantId' | 'photoUrl' | 'caption' | 'createdAt'
+> &
+  Partial<PublicMoment> & { authorName: string };
+
   // Lightbox xem ảnh lớn & lướt qua các khoảnh khắc
-  const [lightboxItems, setLightboxItems] = useState<Array<PublicMoment & { authorName: string }>>(
-    []
-  );
+  const [lightboxItems, setLightboxItems] = useState<LightboxItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
@@ -547,6 +707,7 @@ export function LiveRoomPanel({
   function openComposer() {
     setComposerError(null);
     setComposerCaption('');
+    setComposerSticker('');
     if (composerPreviewUrl) URL.revokeObjectURL(composerPreviewUrl);
     setComposerPreviewUrl(null);
     setComposerBlob(null);
@@ -560,6 +721,7 @@ export function LiveRoomPanel({
     setComposerPreviewUrl(null);
     setComposerBlob(null);
     setComposerCaption('');
+    setComposerSticker('');
     setComposerError(null);
   }
 
@@ -607,6 +769,7 @@ export function LiveRoomPanel({
       await onAddMoment({
         photoUrl: uploadJson.url,
         caption: composerCaption.trim(),
+        sticker: composerSticker,
       });
 
       if (!hadCheckin) {
@@ -622,6 +785,7 @@ export function LiveRoomPanel({
       setComposerPreviewUrl(null);
       setComposerBlob(null);
       setComposerCaption('');
+      setComposerSticker('');
     } catch (err) {
       setComposerError(
         err instanceof Error ? err.message : 'Không đăng được khoảnh khắc, thử lại nhé'
@@ -631,17 +795,7 @@ export function LiveRoomPanel({
     }
   }
 
-  function openMomentsLightbox(
-    items: Array<{
-      id: string;
-      participantId: string;
-      authorName: string;
-      photoUrl: string;
-      caption: string;
-      createdAt: string;
-    }>,
-    index = 0
-  ) {
+  function openMomentsLightbox(items: LightboxItem[], index = 0) {
     if (items.length === 0) return;
     setLightboxItems(items);
     setLightboxIndex(Math.max(0, Math.min(index, items.length - 1)));
@@ -697,11 +851,10 @@ export function LiveRoomPanel({
       <motion.section
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`relative overflow-hidden rounded-3xl border p-5 sm:p-6 ${
-          isLive
-            ? 'border-emerald-400/35 bg-gradient-to-br from-emerald-500/15 via-[var(--surface)] to-[var(--primary)]/10 shadow-lg shadow-emerald-500/5'
-            : 'border-[var(--border)] bg-[var(--surface)]'
-        } backdrop-blur-xl`}
+        className={`relative overflow-hidden rounded-3xl border p-5 sm:p-6 ${isLive
+          ? 'border-emerald-400/35 bg-gradient-to-br from-emerald-500/15 via-[var(--surface)] to-[var(--primary)]/10 shadow-lg shadow-emerald-500/5'
+          : 'border-[var(--border)] bg-[var(--surface)]'
+          } backdrop-blur-xl`}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
@@ -723,13 +876,12 @@ export function LiveRoomPanel({
               {isLive && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-solid)]/80 px-2.5 py-1 text-[11px] font-medium text-[var(--muted)]">
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      connectionMode === 'ws'
-                        ? 'bg-emerald-400'
-                        : connectionMode === 'connecting'
-                          ? 'animate-pulse bg-amber-400'
-                          : 'bg-sky-400'
-                    }`}
+                    className={`h-1.5 w-1.5 rounded-full ${connectionMode === 'ws'
+                      ? 'bg-emerald-400'
+                      : connectionMode === 'connecting'
+                        ? 'animate-pulse bg-amber-400'
+                        : 'bg-sky-400'
+                      }`}
                   />
                   {connectionMode === 'ws'
                     ? 'Realtime WS'
@@ -810,33 +962,46 @@ export function LiveRoomPanel({
                 const hasPhoto = Boolean(person.photoUrl);
 
                 if (hasPhoto) {
+                  const latestMoment = person.moments[0];
+                  const latestMomentId = latestMoment?.id ?? `checkin-${person.id}`;
+                  const topReact = latestMoment ? getTopReaction(latestMoment.reactions) : null;
+                  const isHot = (latestMoment?.totalReactions ?? 0) >= HOT_REACTION_THRESHOLD;
+                  const iLiked = Boolean(latestMoment?.myReactions.includes('❤️'));
                   const lightboxPayload =
                     person.moments.length > 0
                       ? person.moments.map((m) => ({ ...m, authorName: person.name }))
                       : [
-                          {
-                            id: `checkin-${person.id}`,
-                            participantId: person.id,
-                            photoUrl: person.photoUrl,
-                            caption: '',
-                            createdAt: snapshot.serverTime || new Date().toISOString(),
-                            authorName: person.name,
-                          },
-                        ];
+                        {
+                          id: `checkin-${person.id}`,
+                          participantId: person.id,
+                          photoUrl: person.photoUrl,
+                          caption: '',
+                          sticker: '',
+                          pinned: false,
+                          reactions: {},
+                          myReactions: [],
+                          totalReactions: 0,
+                          createdAt: snapshot.serverTime || new Date().toISOString(),
+                          authorName: person.name,
+                        },
+                      ];
 
                   return (
                     <motion.div
                       key={person.id}
                       layout
-                      className={`group relative flex aspect-square flex-col justify-between overflow-hidden rounded-2xl border bg-[var(--surface-solid)] ${
-                        isMe
-                          ? 'border-[var(--primary)]/60 ring-2 ring-[var(--primary)]/35'
-                          : 'border-[var(--border)]'
-                      }`}
+                      className={`group relative flex aspect-square flex-col justify-between overflow-hidden rounded-2xl border bg-[var(--surface-solid)] ${isMe
+                        ? 'border-[var(--primary)]/60 ring-2 ring-[var(--primary)]/35'
+                        : 'border-[var(--border)]'
+                        }`}
                     >
                       <button
                         type="button"
-                        onClick={() => openMomentsLightbox(lightboxPayload, 0)}
+                        onClick={(e) =>
+                          handlePhotoTap(latestMomentId, e, () =>
+                            openMomentsLightbox(lightboxPayload, 0)
+                          )
+                        }
                         className="absolute inset-0 h-full w-full text-left"
                         aria-label={`Xem ảnh của ${person.name}`}
                       >
@@ -851,14 +1016,34 @@ export function LiveRoomPanel({
                         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/25" />
                       </button>
 
+                      <EmojiBurstOverlay
+                        items={floatingEmojis.filter((item) => item.momentId === latestMomentId)}
+                        onDone={removeFloatingEmoji}
+                      />
+
                       <div className="relative z-10 flex items-center justify-between gap-1 p-2">
-                        {person.moments.length > 1 ? (
-                          <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums">
-                            📸 {person.moments.length}
-                          </span>
-                        ) : (
-                          <span />
-                        )}
+                        <div className="flex items-center gap-1">
+                          {latestMoment?.pinned && (
+                            <span className="rounded-full bg-amber-500/80 px-1.5 py-0.5 text-[10px] font-bold text-black backdrop-blur-md">
+                              📌
+                            </span>
+                          )}
+                          {isHot && (
+                            <span className="cwm-pop-once rounded-full bg-orange-500/85 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-md">
+                              🔥
+                            </span>
+                          )}
+                          {latestMoment?.sticker && (
+                            <span className="rounded-full bg-black/55 px-1.5 py-0.5 text-xs backdrop-blur-md">
+                              {latestMoment.sticker}
+                            </span>
+                          )}
+                          {person.moments.length > 1 && (
+                            <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums">
+                              📸 {person.moments.length}
+                            </span>
+                          )}
+                        </div>
                         {isMe && canAddMoreMoments && (
                           <button
                             type="button"
@@ -873,14 +1058,25 @@ export function LiveRoomPanel({
                         )}
                       </div>
 
-                      <div className="pointer-events-none relative z-10 p-2.5 text-white">
-                        <p className="truncate text-xs font-extrabold">
-                          {isMe ? 'Bạn' : person.name}
-                        </p>
-                        {person.moments[0]?.caption && (
-                          <p className="line-clamp-1 text-[10px] text-white/85">
-                            {person.moments[0].caption}
+                      <div className="pointer-events-none relative z-10 flex items-end justify-between gap-1.5 p-2.5 text-white">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-1 truncate text-xs font-extrabold">
+                            <span>{isMe ? 'Bạn' : person.name}</span>
+                            {iLiked && <span className="text-[11px]">❤️</span>}
                           </p>
+                          {latestMoment?.caption && (
+                            <p className="line-clamp-1 text-[10px] text-white/85">
+                              {latestMoment.caption}
+                            </p>
+                          )}
+                        </div>
+                        {topReact && (
+                          <span
+                            key={`${topReact.emoji}-${topReact.count}`}
+                            className="cwm-pop-once shrink-0 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums"
+                          >
+                            {topReact.emoji} {topReact.count}
+                          </span>
                         )}
                       </div>
                     </motion.div>
@@ -902,11 +1098,10 @@ export function LiveRoomPanel({
                         openComposer();
                       }
                     }}
-                    className={`relative flex aspect-square flex-col items-center justify-center gap-1.5 rounded-2xl border p-3.5 text-center backdrop-blur-sm ${theme.bg} ${
-                      isMe && canAddMoreMoments
-                        ? 'cursor-pointer ring-2 ring-[var(--primary)]/50 transition hover:scale-[1.02]'
-                        : ''
-                    }`}
+                    className={`relative flex aspect-square flex-col items-center justify-center gap-1.5 rounded-2xl border p-3.5 text-center backdrop-blur-sm ${theme.bg} ${isMe && canAddMoreMoments
+                      ? 'cursor-pointer ring-2 ring-[var(--primary)]/50 transition hover:scale-[1.02]'
+                      : ''
+                      }`}
                   >
                     <motion.div
                       animate={{
@@ -1064,11 +1259,10 @@ export function LiveRoomPanel({
                   setExtraEntries(null);
                   setVisibleLimit(INITIAL_VISIBLE_LIMIT);
                 }}
-                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${
-                  activeView === 'timeline'
-                    ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
+                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${activeView === 'timeline'
+                  ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
+                  }`}
               >
                 Dòng thời gian
               </button>
@@ -1079,11 +1273,10 @@ export function LiveRoomPanel({
                   setExtraEntries(null);
                   setVisibleLimit(INITIAL_VISIBLE_LIMIT);
                 }}
-                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${
-                  activeView === 'hourly'
-                    ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
-                    : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
+                className={`rounded-lg px-2.5 py-1.5 font-semibold transition ${activeView === 'hourly'
+                  ? 'bg-[var(--primary)] text-[var(--primary-fg)]'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
+                  }`}
               >
                 Khung giờ
               </button>
@@ -1112,11 +1305,10 @@ export function LiveRoomPanel({
                 setExtraEntries(null);
                 setVisibleLimit(INITIAL_VISIBLE_LIMIT);
               }}
-              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-                selectedPersonId === null
-                  ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
-                  : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--muted)] hover:text-[var(--text)]'
-              }`}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition ${selectedPersonId === null
+                ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--muted)] hover:text-[var(--text)]'
+                }`}
             >
               Tất cả ({activeSnapshot.checkins.length})
             </button>
@@ -1132,11 +1324,10 @@ export function LiveRoomPanel({
                     setExtraEntries(null);
                     setVisibleLimit(INITIAL_VISIBLE_LIMIT);
                   }}
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs font-semibold transition ${
-                    selected
-                      ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
-                      : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text)] hover:border-[var(--primary)]/50'
-                  }`}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs font-semibold transition ${selected
+                    ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                    : 'border-[var(--border)] bg-[var(--surface-solid)] text-[var(--text)] hover:border-[var(--primary)]/50'
+                    }`}
                 >
                   <UserAvatar name={person.name} size="sm" />
                   <span>{person.name}</span>
@@ -1192,11 +1383,31 @@ export function LiveRoomPanel({
                 const photosCount = block.moments.length;
                 const displayMoments = block.moments.slice(0, 4);
                 const extraCount = Math.max(0, photosCount - 4);
-                const lightboxPayload = block.moments.map((m) => ({
-                  ...m,
-                  participantId: block.participantId,
-                  authorName: block.name,
-                }));
+                const primaryMomentId = displayMoments[0]?.id ?? '';
+                const primaryMeta = momentMetaById.get(primaryMomentId);
+                const isPinnedBlock = block.moments.some((m) => momentMetaById.get(m.id)?.pinned);
+                const blockTotalReacts = block.moments.reduce(
+                  (sum, m) => sum + (momentMetaById.get(m.id)?.totalReactions ?? 0),
+                  0
+                );
+                const isHotBlock = blockTotalReacts >= HOT_REACTION_THRESHOLD;
+
+                const lightboxPayload = block.moments.map((m) => {
+                  const meta = momentMetaById.get(m.id);
+                  return {
+                    id: m.id,
+                    photoUrl: m.photoUrl,
+                    caption: m.caption,
+                    createdAt: m.createdAt,
+                    sticker: meta?.sticker ?? '',
+                    pinned: meta?.pinned ?? false,
+                    reactions: meta?.reactions ?? {},
+                    myReactions: meta?.myReactions ?? [],
+                    totalReactions: meta?.totalReactions ?? 0,
+                    participantId: block.participantId,
+                    authorName: block.name,
+                  };
+                });
 
                 return (
                   <motion.div
@@ -1204,72 +1415,209 @@ export function LiveRoomPanel({
                     layout
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="relative space-y-2.5 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)]/90 p-3.5 sm:p-4"
+                    className={`relative space-y-2.5 rounded-2xl border p-3.5 sm:p-4 ${isPinnedBlock
+                      ? 'border-amber-400/50 bg-amber-500/5'
+                      : 'border-[var(--border)] bg-[var(--surface-solid)]/90'
+                      }`}
                   >
                     <span className="absolute -left-[23px] top-5 h-3 w-3 rounded-full border-2 border-[var(--bg)] bg-[var(--primary)] ring-2 ring-[var(--primary)]/25" />
 
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <UserAvatar name={block.name} size="sm" />
                         <div>
-                          <p className="text-sm font-bold text-[var(--text)]">
-                            {block.name}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-bold text-[var(--text)]">
+                              {block.name}
+                            </p>
+                            {block.participantId === myParticipantId && (
+                              <span className="rounded-full bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--primary)]">
+                                Bạn
+                              </span>
+                            )}
+                            {isPinnedBlock && (
+                              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                                📌 Đã ghim
+                              </span>
+                            )}
+                            {isHotBlock && (
+                              <span className="cwm-pop-once rounded-full bg-orange-500/20 px-2 py-0.5 text-[10px] font-bold text-orange-300">
+                                🔥 Hot
+                              </span>
+                            )}
+                            {primaryMeta?.sticker && (
+                              <span className="text-sm" title="Sticker tâm trạng">
+                                {primaryMeta.sticker}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-[var(--muted)] tabular-nums">
                             {formatLocalTime(block.timestamp)}
                             {photosCount > 1 ? ` · ${photosCount} khoảnh khắc` : ''}
                           </p>
                         </div>
                       </div>
+
+                      {isOwner && primaryMomentId && !primaryMomentId.startsWith('checkin-') && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onPinMoment?.(primaryMomentId, !isPinnedBlock)
+                          }
+                          className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition ${isPinnedBlock
+                            ? 'border-amber-400/50 bg-amber-500/15 text-amber-300'
+                            : 'border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]'
+                            }`}
+                        >
+                          {isPinnedBlock ? '📌 Bỏ ghim' : '📌 Ghim'}
+                        </button>
+                      )}
                     </div>
 
                     {/* Lưới ảnh: 1 ảnh giữ đúng tỷ lệ vừa mắt không cắt, 2-4+ ảnh lưới 2x2 gọn gàng */}
                     {displayMoments.length === 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => openMomentsLightbox(lightboxPayload, 0)}
-                        className="group relative inline-block max-w-full overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 text-left"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={displayMoments[0].photoUrl}
-                          alt={displayMoments[0].caption || `Khoảnh khắc của ${block.name}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="max-h-72 w-auto max-w-full object-contain transition duration-300 group-hover:scale-[1.02] sm:max-h-80"
+                      <div className="relative inline-block max-w-full overflow-hidden rounded-xl border border-[var(--border)] bg-black/25">
+                        <button
+                          type="button"
+                          onClick={(e) =>
+                            handlePhotoTap(displayMoments[0].id, e, () =>
+                              openMomentsLightbox(lightboxPayload, 0)
+                            )
+                          }
+                          className="group relative block max-w-full text-left"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={displayMoments[0].photoUrl}
+                            alt={displayMoments[0].caption || `Khoảnh khắc của ${block.name}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="max-h-72 w-auto max-w-full object-contain transition duration-300 group-hover:scale-[1.01] sm:max-h-80"
+                          />
+                        </button>
+                        <EmojiBurstOverlay
+                          items={floatingEmojis.filter((item) => item.momentId === displayMoments[0].id)}
+                          onDone={removeFloatingEmoji}
                         />
-                      </button>
+                      </div>
                     ) : (
                       <div className="grid max-w-md grid-cols-2 gap-1.5 overflow-hidden rounded-xl">
                         {displayMoments.map((m, idx) => {
                           const isLastOverflow = idx === 3 && extraCount > 0;
                           return (
-                            <button
+                            <div
                               key={m.id}
-                              type="button"
-                              onClick={() => openMomentsLightbox(lightboxPayload, idx)}
-                              className={`group relative overflow-hidden rounded-xl bg-black/20 text-left ${
-                                displayMoments.length === 3 && idx === 0
-                                  ? 'col-span-2 aspect-[16/9]'
-                                  : 'aspect-square'
-                              }`}
+                              className={`relative overflow-hidden rounded-xl bg-black/20 ${displayMoments.length === 3 && idx === 0
+                                ? 'col-span-2 aspect-[16/9]'
+                                : 'aspect-square'
+                                }`}
                             >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={m.photoUrl}
-                                alt={m.caption || `Khoảnh khắc của ${block.name}`}
-                                loading="lazy"
-                                decoding="async"
-                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                              <button
+                                type="button"
+                                onClick={(e) =>
+                                  handlePhotoTap(m.id, e, () =>
+                                    openMomentsLightbox(lightboxPayload, idx)
+                                  )
+                                }
+                                className="group relative h-full w-full text-left"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={m.photoUrl}
+                                  alt={m.caption || `Khoảnh khắc của ${block.name}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                                />
+                                {isLastOverflow && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-lg font-extrabold text-white">
+                                    +{extraCount}
+                                  </div>
+                                )}
+                              </button>
+                              <EmojiBurstOverlay
+                                items={floatingEmojis.filter((item) => item.momentId === m.id)}
+                                onDone={removeFloatingEmoji}
                               />
-                              {isLastOverflow && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-lg font-extrabold text-white">
-                                  +{extraCount}
-                                </div>
-                              )}
-                            </button>
+                            </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {/* Thanh cảm xúc & đếm reaction */}
+                    {primaryMomentId && (
+                      <div className="relative flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {REACTION_EMOJIS.map((emoji) => {
+                            const count = primaryMeta?.reactions[emoji] ?? 0;
+                            if (count === 0) return null;
+                            const active = primaryMeta?.myReactions.includes(emoji);
+                            return (
+                              <button
+                                key={`${emoji}-${count}`}
+                                type="button"
+                                onClick={() => {
+                                  if (!isLive || !canCheckin) return;
+                                  if (!active) {
+                                    triggerReactionBurst(primaryMomentId, emoji, 'toggle');
+                                  } else {
+                                    void onReactMoment?.(primaryMomentId, emoji, 'toggle');
+                                  }
+                                }}
+                                className={`cwm-pop-once inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold tabular-nums transition ${active
+                                  ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                                  : 'border-[var(--border)] bg-[var(--bg)] text-[var(--text)] hover:border-[var(--primary)]/50'
+                                  }`}
+                              >
+                                <span>{emoji}</span>
+                                <span>{count}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {isLive && canCheckin && (
+                          <div className="relative flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenPickerMomentId((cur) =>
+                                  cur === primaryMomentId ? null : primaryMomentId
+                                )
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg)] text-sm transition hover:border-[var(--primary)]"
+                              title="Thả cảm xúc"
+                              aria-label="Mở thanh chọn emoji"
+                            >
+                              ☺
+                            </button>
+
+                            <AnimatePresence>
+                              {openPickerMomentId === primaryMomentId && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.9, y: 4 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.9, y: 4 }}
+                                  className="absolute bottom-10 right-0 z-30 flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-solid)] px-2 py-1.5 shadow-xl"
+                                >
+                                  {REACTION_EMOJIS.map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      onClick={() =>
+                                        triggerReactionBurst(primaryMomentId, emoji, 'set')
+                                      }
+                                      className="flex h-8 w-8 items-center justify-center rounded-full text-lg transition hover:scale-125 hover:bg-[var(--bg)] active:scale-95"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1301,6 +1649,46 @@ export function LiveRoomPanel({
         ) : (
           /* CÁCH 2: GOM THEO KHUNG GIỜ (ALBUM SAU KÈO) */
           <div className="space-y-6">
+            {isDone && topLikedMoments.length > 0 && (
+              <section className="space-y-2.5 rounded-2xl border border-amber-400/30 bg-amber-500/5 p-3.5 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display text-sm font-bold text-amber-300">
+                    🏆 Ảnh được yêu thích nhất
+                  </h3>
+                  <span className="text-[11px] text-[var(--muted)]">Bình chọn nhiều nhất</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {topLikedMoments.map((m, idx) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => openMomentsLightbox(topLikedMoments, idx)}
+                      className="group relative flex aspect-square flex-col justify-between overflow-hidden rounded-xl border border-amber-400/30 bg-black/25 p-2 text-left"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={m.photoUrl}
+                        alt={m.caption || `Ảnh yêu thích của ${m.authorName}`}
+                        loading="lazy"
+                        decoding="async"
+                        className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30" />
+                      <span className="relative z-10 self-start rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-black">
+                        #{idx + 1}
+                      </span>
+                      <div className="relative z-10 flex items-center justify-between gap-1 text-white">
+                        <span className="truncate text-[11px] font-bold">{m.authorName}</span>
+                        <span className="shrink-0 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                          ❤️ {m.totalReactions}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {hourlyBuckets.map(([bucketKey, group]) => (
               <section key={bucketKey} className="space-y-3">
                 <div className="sticky top-14 z-10 flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 backdrop-blur-md">
@@ -1331,16 +1719,30 @@ export function LiveRoomPanel({
                 {group.moments.length > 0 && (
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
                     {group.moments.map((m, idx) => {
-                      const lightboxPayload = group.moments.map((item) => ({
-                        ...item,
-                        authorName: item.name,
-                      }));
+                      const lightboxPayload = group.moments.map((item) => {
+                        const meta = momentMetaById.get(item.id);
+                        return {
+                          id: item.id,
+                          participantId: item.participantId,
+                          photoUrl: item.photoUrl,
+                          caption: item.caption,
+                          sticker: meta?.sticker ?? '',
+                          pinned: meta?.pinned ?? false,
+                          reactions: meta?.reactions ?? {},
+                          myReactions: meta?.myReactions ?? [],
+                          totalReactions: meta?.totalReactions ?? 0,
+                          createdAt: item.createdAt,
+                          authorName: item.name,
+                        };
+                      });
+                      const meta = momentMetaById.get(m.id);
+                      const topReact = meta ? getTopReaction(meta.reactions) : null;
                       return (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => openMomentsLightbox(lightboxPayload, idx)}
-                          className="group relative flex aspect-square flex-col justify-end overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] text-left"
+                          className="group relative flex aspect-square flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] text-left"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -1351,6 +1753,20 @@ export function LiveRoomPanel({
                             className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+                          <div className="relative z-10 flex items-center justify-between gap-1 p-2">
+                            {meta?.sticker ? (
+                              <span className="rounded-full bg-black/55 px-1.5 py-0.5 text-xs backdrop-blur-md">
+                                {meta.sticker}
+                              </span>
+                            ) : (
+                              <span />
+                            )}
+                            {topReact && (
+                              <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md tabular-nums">
+                                {topReact.emoji} {topReact.count}
+                              </span>
+                            )}
+                          </div>
                           <div className="relative z-10 space-y-0.5 p-2.5 text-white">
                             <p className="truncate text-xs font-bold">{m.name}</p>
                             {m.caption && (
@@ -1492,6 +1908,35 @@ export function LiveRoomPanel({
                   </button>
                 </div>
               )}
+
+              <div>
+                <p className="mb-1.5 text-xs text-[var(--muted)]">Sticker tâm trạng (tùy chọn)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setComposerSticker('')}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${composerSticker === ''
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                      : 'border-[var(--border)] text-[var(--muted)]'
+                      }`}
+                  >
+                    Không
+                  </button>
+                  {MOMENT_STICKERS.map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setComposerSticker(st)}
+                      className={`rounded-full border px-2.5 py-1 text-base transition ${composerSticker === st
+                        ? 'border-[var(--primary)] bg-[var(--primary)]/20 scale-105'
+                        : 'border-[var(--border)] hover:border-[var(--primary)]/50'
+                        }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div>
                 <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
@@ -1640,12 +2085,24 @@ export function LiveRoomPanel({
                 </div>
               </div>
 
-              <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black/40">
+              <div
+                className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black/40"
+                onDoubleClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const xPct = Math.max(10, Math.min(90, ((e.clientX - rect.left) / rect.width) * 100));
+                  const yPct = Math.max(15, Math.min(85, ((e.clientY - rect.top) / rect.height) * 100));
+                  triggerReactionBurst(activeLightboxItem.id, '❤️', 'set', xPct, yPct);
+                }}
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={activeLightboxItem.photoUrl}
                   alt={activeLightboxItem.caption || `Khoảnh khắc của ${activeLightboxItem.authorName}`}
-                  className="max-h-[68vh] w-full object-contain"
+                  className="max-h-[64vh] w-full select-none object-contain"
+                />
+                <EmojiBurstOverlay
+                  items={floatingEmojis.filter((item) => item.momentId === activeLightboxItem.id)}
+                  onDone={removeFloatingEmoji}
                 />
 
                 {lightboxItems.length > 1 && (
@@ -1676,8 +2133,32 @@ export function LiveRoomPanel({
 
               {activeLightboxItem.caption && (
                 <p className="rounded-xl bg-white/10 px-4 py-2.5 text-center text-sm text-white">
-                  “{activeLightboxItem.caption}”
+                  {activeLightboxItem.sticker ? `${activeLightboxItem.sticker} ` : ''}“{activeLightboxItem.caption}”
                 </p>
+              )}
+
+              {isLive && canCheckin && !activeLightboxItem.id.startsWith('checkin-') && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {REACTION_EMOJIS.map((emoji) => {
+                    const liveMeta = momentMetaById.get(activeLightboxItem.id);
+                    const count = liveMeta?.reactions[emoji] ?? 0;
+                    const active = liveMeta?.myReactions.includes(emoji);
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => triggerReactionBurst(activeLightboxItem.id, emoji, 'set')}
+                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm font-bold text-white transition hover:scale-110 active:scale-95 ${active
+                          ? 'border-[var(--primary)] bg-[var(--primary)]/25'
+                          : 'border-white/20 bg-white/10'
+                          }`}
+                      >
+                        <span>{emoji}</span>
+                        {count > 0 && <span className="text-xs tabular-nums">{count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
 
               {lightboxItems.length > 1 && (
@@ -1687,11 +2168,10 @@ export function LiveRoomPanel({
                       key={m.id}
                       type="button"
                       onClick={() => setLightboxIndex(idx)}
-                      className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 transition ${
-                        idx === lightboxIndex
-                          ? 'border-[var(--primary)] scale-105'
-                          : 'border-transparent opacity-60 hover:opacity-100'
-                      }`}
+                      className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 transition ${idx === lightboxIndex
+                        ? 'border-[var(--primary)] scale-105'
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                        }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={m.photoUrl} alt="" className="h-full w-full object-cover" />
